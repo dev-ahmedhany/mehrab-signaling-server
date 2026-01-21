@@ -1,8 +1,8 @@
-Here's a step-by-step guide to deploy the signaling server and TURN server on separate VPS instances:
+Here's a step-by-step guide to deploy the signaling server and TURN server on separate Oracle Cloud VPS instances:
 
   Prerequisites
 
-  1. Two VPS instances (DigitalOcean, Hetzner, AWS, etc.) with public IPs:
+  1. Two Oracle Cloud VPS instances with public IPs:
     - VPS 1: Signaling Server
     - VPS 2: TURN Server
   2. DNS records pointing to your VPS instances:
@@ -25,64 +25,96 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   ═══════════════════════════════════════════════════════════════════════════════
 
   ---
-  Step 2: SSH into Signaling Server VPS
+  Step 2: Configure Oracle Cloud VCN Security Lists (Signaling Server)
 
-  ssh root@SIGNALING_VPS_IP
+  In Oracle Cloud Console:
+  1. Go to: Networking → Virtual Cloud Networks
+  2. Click your VCN name
+  3. Click Subnets → click your subnet
+  4. Click the Security List (e.g., "Default Security List for...")
+  5. Click "Add Ingress Rules"
+  6. Add these rules:
+
+  | Source CIDR | IP Protocol | Destination Port Range |
+  |-------------|-------------|------------------------|
+  | 0.0.0.0/0   | TCP         | 80                     |
+  | 0.0.0.0/0   | TCP         | 443                    |
+
+  Note: Leave "Source Port Range" empty for all rules.
 
   ---
-  Step 3: Install Dependencies (Signaling Server)
+  Step 3: SSH into Signaling Server VPS
+
+  ssh ubuntu@SIGNALING_VPS_IP
+
+  ---
+  Step 4: Configure OS Firewall - iptables (Signaling Server)
+
+  Oracle Cloud uses iptables with a REJECT rule that blocks traffic by default.
+  You must add rules BEFORE the REJECT rule.
+
+  # Check current iptables rules
+  sudo iptables -L INPUT -n --line-numbers
+
+  # Find the line number of the REJECT rule (usually line 5)
+  # Add port 80 and 443 BEFORE the REJECT rule
+
+  sudo iptables -I INPUT 5 -p tcp --dport 80 -m state --state NEW -j ACCEPT
+  sudo iptables -I INPUT 6 -p tcp --dport 443 -m state --state NEW -j ACCEPT
+
+  # Verify the rules were added correctly
+  sudo iptables -L INPUT -n --line-numbers
+
+  # Save iptables rules to persist after reboot
+  sudo apt install -y iptables-persistent
+  sudo netfilter-persistent save
+
+  ---
+  Step 5: Install Dependencies (Signaling Server)
 
   # Update system
-  apt update && apt upgrade -y
+  sudo apt update && sudo apt upgrade -y
 
-  # Install Docker
-  curl -fsSL https://get.docker.com | sh
+  # Install Node.js 20.x
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  sudo apt install -y nodejs
 
-  # Install Docker Compose
-  curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname
-  -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-  chmod +x /usr/local/bin/docker-compose
+  # Install PM2 globally (process manager)
+  sudo npm install -g pm2
 
   # Install Certbot and Nginx
-  apt install -y certbot nginx git
+  sudo apt install -y certbot nginx git
 
   ---
-  Step 4: Configure Firewall (Signaling Server)
+  Step 6: Get SSL Certificate (Signaling Server)
 
-  # Enable UFW
-  ufw allow 22/tcp      # SSH
-  ufw allow 80/tcp      # HTTP (for SSL cert)
-  ufw allow 443/tcp     # HTTPS
-  ufw --force enable
+  # Stop nginx temporarily (if running)
+  sudo systemctl stop nginx
 
-  ---
-  Step 5: Get SSL Certificate (Signaling Server)
-
-  # Stop nginx temporarily
-  systemctl stop nginx
-
-  # Get certificate for signaling domain only
-  certbot certonly --standalone -d signal.ahmedhany.dev
+  # Get certificate for signaling domain
+  sudo certbot certonly --standalone -d signal.ahmedhany.dev
 
   # Certificate saved to:
   # /etc/letsencrypt/live/signal.ahmedhany.dev/fullchain.pem
   # /etc/letsencrypt/live/signal.ahmedhany.dev/privkey.pem
 
   ---
-  Step 6: Clone and Configure the Project (Signaling Server)
+  Step 7: Clone and Configure the Project (Signaling Server)
 
-  # Clone your repository (or copy files)
+  # Clone your repository
   cd /opt
-  git clone https://github.com/YOUR_USERNAME/mehrab.git
-  cd mehrab/mehrab-signaling-server
+  sudo git clone https://github.com/dev-ahmedhany/mehrab-signaling-server.git
+  sudo chown -R $USER:$USER mehrab-signaling-server
+  cd mehrab-signaling-server
 
-  # Or if not using git, create the directory and copy files:
-  # mkdir -p /opt/mehrab-signaling-server
-  # cd /opt/mehrab-signaling-server
-  # # Then copy all files from mehrab-signaling-server/
+  # Install dependencies
+  npm install
+
+  # Build TypeScript
+  npm run build
 
   ---
-  Step 7: Create Environment File (Signaling Server)
+  Step 8: Create Environment File (Signaling Server)
 
   nano .env
 
@@ -95,8 +127,7 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   # Firebase Configuration (from Firebase Console > Project Settings > Service Accounts)
   FIREBASE_PROJECT_ID=your-firebase-project-id
   FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project.iam.gserviceaccount.com
-  FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYOUR_ACTUAL_PRIVATE_KEY_HERE\n-----END PRIVATE
-  KEY-----\n"
+  FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYOUR_ACTUAL_PRIVATE_KEY_HERE\n-----END PRIVATE KEY-----\n"
 
   # TURN Server Configuration (points to the separate TURN server)
   TURN_SECRET=GENERATE_A_SECURE_RANDOM_STRING_MIN_32_CHARS
@@ -112,9 +143,9 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   IMPORTANT: Save this TURN_SECRET - you'll need the same value on the TURN server!
 
   ---
-  Step 8: Configure Nginx Reverse Proxy (Signaling Server)
+  Step 9: Configure Nginx Reverse Proxy (Signaling Server)
 
-  nano /etc/nginx/sites-available/signal.ahmedhany.dev
+  sudo nano /etc/nginx/sites-available/signal.ahmedhany.dev
 
   Add:
 
@@ -150,36 +181,43 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
 
   Enable the site:
 
-  ln -s /etc/nginx/sites-available/signal.ahmedhany.dev /etc/nginx/sites-enabled/
-  nginx -t
-  systemctl start nginx
-  systemctl enable nginx
+  sudo ln -s /etc/nginx/sites-available/signal.ahmedhany.dev /etc/nginx/sites-enabled/
+  sudo nginx -t
+  sudo systemctl start nginx
+  sudo systemctl enable nginx
 
   ---
-  Step 9: Deploy Signaling Server with Docker
+  Step 10: Start Signaling Server with PM2
 
-  cd /opt/mehrab/mehrab-signaling-server
+  cd /opt/mehrab-signaling-server
 
-  # Build and start (only signaling server, no coturn)
-  docker-compose up -d --build signaling-server
+  # Start the server
+  pm2 start dist/index.js --name signaling-server
+
+  # Setup auto-start on reboot
+  pm2 startup
+  # Run the command it outputs (starts with sudo env PATH=...)
+
+  # Save current process list
+  pm2 save
 
   # Check status
-  docker-compose ps
+  pm2 status
 
   # View logs
-  docker-compose logs -f signaling-server
+  pm2 logs signaling-server
 
   ---
-  Step 10: Setup Auto-renewal for SSL (Signaling Server)
+  Step 11: Setup Auto-renewal for SSL (Signaling Server)
 
-  crontab -e
+  sudo crontab -e
 
   Add:
 
   0 0 1 * * certbot renew --quiet --post-hook "systemctl reload nginx"
 
   ---
-  Step 11: Verify Signaling Server Deployment
+  Step 12: Verify Signaling Server Deployment
 
   # Test health endpoint
   curl https://signal.ahmedhany.dev/health
@@ -192,45 +230,76 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   ═══════════════════════════════════════════════════════════════════════════════
 
   ---
-  Step 12: SSH into TURN Server VPS
+  Step 13: Configure Oracle Cloud VCN Security Lists (TURN Server)
 
-  ssh root@TURN_VPS_IP
+  In Oracle Cloud Console:
+  1. Go to: Networking → Virtual Cloud Networks
+  2. Click your VCN name
+  3. Click Subnets → click your subnet
+  4. Click the Security List
+  5. Click "Add Ingress Rules"
+  6. Add these rules:
+
+  | Source CIDR | IP Protocol | Destination Port Range |
+  |-------------|-------------|------------------------|
+  | 0.0.0.0/0   | TCP         | 80                     |
+  | 0.0.0.0/0   | TCP         | 3478                   |
+  | 0.0.0.0/0   | UDP         | 3478                   |
+  | 0.0.0.0/0   | TCP         | 5349                   |
+  | 0.0.0.0/0   | UDP         | 49152-65535            |
+
+  Note: Leave "Source Port Range" empty for all rules.
 
   ---
-  Step 13: Install Dependencies (TURN Server)
+  Step 14: SSH into TURN Server VPS
+
+  ssh ubuntu@TURN_VPS_IP
+
+  ---
+  Step 15: Configure OS Firewall - iptables (TURN Server)
+
+  # Check current iptables rules
+  sudo iptables -L INPUT -n --line-numbers
+
+  # Find the line number of the REJECT rule (usually line 5)
+  # Add TURN ports BEFORE the REJECT rule
+
+  sudo iptables -I INPUT 5 -p tcp --dport 80 -m state --state NEW -j ACCEPT
+  sudo iptables -I INPUT 6 -p tcp --dport 3478 -m state --state NEW -j ACCEPT
+  sudo iptables -I INPUT 7 -p udp --dport 3478 -j ACCEPT
+  sudo iptables -I INPUT 8 -p tcp --dport 5349 -m state --state NEW -j ACCEPT
+  sudo iptables -I INPUT 9 -p udp --dport 49152:65535 -j ACCEPT
+
+  # Verify the rules were added correctly
+  sudo iptables -L INPUT -n --line-numbers
+
+  # Save iptables rules to persist after reboot
+  sudo apt install -y iptables-persistent
+  sudo netfilter-persistent save
+
+  ---
+  Step 16: Install Dependencies (TURN Server)
 
   # Update system
-  apt update && apt upgrade -y
+  sudo apt update && sudo apt upgrade -y
 
   # Install Coturn and Certbot
-  apt install -y coturn certbot
+  sudo apt install -y coturn certbot
 
   ---
-  Step 14: Configure Firewall (TURN Server)
-
-  # Enable UFW
-  ufw allow 22/tcp           # SSH
-  ufw allow 80/tcp           # HTTP (for SSL cert)
-  ufw allow 3478/udp         # TURN UDP
-  ufw allow 3478/tcp         # TURN TCP
-  ufw allow 5349/tcp         # TURN TLS
-  ufw allow 49152:65535/udp  # TURN relay range
-  ufw --force enable
-
-  ---
-  Step 15: Get SSL Certificate (TURN Server)
+  Step 17: Get SSL Certificate (TURN Server)
 
   # Get certificate for TURN domain
-  certbot certonly --standalone -d turn.ahmedhany.dev
+  sudo certbot certonly --standalone -d turn.ahmedhany.dev
 
   # Certificate saved to:
   # /etc/letsencrypt/live/turn.ahmedhany.dev/fullchain.pem
   # /etc/letsencrypt/live/turn.ahmedhany.dev/privkey.pem
 
   ---
-  Step 16: Configure Coturn
+  Step 18: Configure Coturn
 
-  nano /etc/turnserver.conf
+  sudo nano /etc/turnserver.conf
 
   Add the following configuration:
 
@@ -277,35 +346,35 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   curl ifconfig.me
 
   ---
-  Step 17: Enable and Start Coturn
+  Step 19: Enable and Start Coturn
 
   # Enable coturn service
-  echo "TURNSERVER_ENABLED=1" >> /etc/default/coturn
+  echo "TURNSERVER_ENABLED=1" | sudo tee -a /etc/default/coturn
 
   # Start coturn
-  systemctl enable coturn
-  systemctl start coturn
+  sudo systemctl enable coturn
+  sudo systemctl start coturn
 
   # Check status
-  systemctl status coturn
+  sudo systemctl status coturn
 
   # View logs
-  tail -f /var/log/turnserver.log
+  sudo tail -f /var/log/turnserver.log
 
   ---
-  Step 18: Setup Auto-renewal for SSL (TURN Server)
+  Step 20: Setup Auto-renewal for SSL (TURN Server)
 
-  crontab -e
+  sudo crontab -e
 
   Add:
 
   0 0 1 * * certbot renew --quiet --post-hook "systemctl restart coturn"
 
   ---
-  Step 19: Verify TURN Server Deployment
+  Step 21: Verify TURN Server Deployment
 
   # Test TURN server
-  apt install coturn-utils -y
+  sudo apt install coturn-utils -y
   turnutils_uclient -T -u "test:user" -w "test" turn.ahmedhany.dev -p 3478
 
   # Or test from external using:
@@ -318,64 +387,89 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   Signaling Server (VPS 1):
   ---
   # View logs
-  docker-compose logs -f signaling-server
+  pm2 logs signaling-server
 
   # Restart service
-  docker-compose restart signaling-server
+  pm2 restart signaling-server
 
   # Stop service
-  docker-compose down
+  pm2 stop signaling-server
+
+  # Check status
+  pm2 status
 
   # Update and redeploy
-  cd /opt/mehrab/mehrab-signaling-server
+  cd /opt/mehrab-signaling-server
   git pull
-  docker-compose up -d --build signaling-server
+  npm install
+  npm run build
+  pm2 restart signaling-server
 
   TURN Server (VPS 2):
   ---
   # View logs
-  tail -f /var/log/turnserver.log
+  sudo tail -f /var/log/turnserver.log
 
   # Restart service
-  systemctl restart coturn
+  sudo systemctl restart coturn
 
   # Stop service
-  systemctl stop coturn
+  sudo systemctl stop coturn
 
   # Check status
-  systemctl status coturn
+  sudo systemctl status coturn
 
   ═══════════════════════════════════════════════════════════════════════════════
   TROUBLESHOOTING
   ═══════════════════════════════════════════════════════════════════════════════
 
+  If ports are blocked (connection timeout):
+  ---
+  # 1. Check Oracle Cloud VCN Security Lists in the Console
+  #    Make sure ingress rules are added for the required ports
+
+  # 2. Check iptables rules on the server
+  sudo iptables -L INPUT -n --line-numbers
+
+  # Look for REJECT rule - your port rules must be BEFORE it
+  # If rules are in wrong order, delete and re-add them
+
+  # Test if port is open from your local machine:
+  curl -v http://YOUR_DOMAIN:PORT
+
+  # "Connection refused" = port open but nothing listening (good!)
+  # "Connection timeout" = port blocked at network level (fix firewall)
+
   If signaling server health check fails:
   ---
-  # Check if container is running
-  docker-compose ps
+  # Check if PM2 process is running
+  pm2 status
 
   # Check signaling server logs
-  docker-compose logs signaling-server
+  pm2 logs signaling-server
 
   # Check if port 3000 is listening
-  netstat -tlnp | grep 3000
+  sudo ss -tlnp | grep 3000
 
   # Check Nginx config
-  nginx -t
+  sudo nginx -t
+
+  # Restart signaling server
+  pm2 restart signaling-server
 
   If TURN doesn't work:
   ---
   # Check Coturn logs
-  tail -100 /var/log/turnserver.log
+  sudo tail -100 /var/log/turnserver.log
 
   # Verify external-ip is set correctly in /etc/turnserver.conf
   grep external-ip /etc/turnserver.conf
 
-  # Verify firewall ports are open
-  ufw status
+  # Check iptables rules
+  sudo iptables -L INPUT -n --line-numbers
 
   # Check if coturn is running
-  systemctl status coturn
+  sudo systemctl status coturn
 
   # Test TURN connectivity from outside
   # Use https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/
@@ -386,7 +480,7 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   openssl s_client -connect signal.ahmedhany.dev:443 -servername signal.ahmedhany.dev
 
   # Check Nginx config
-  nginx -t
+  sudo nginx -t
 
   If SSL issues on TURN Server:
   ---
@@ -401,21 +495,23 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   ═══════════════════════════════════════════════════════════════════════════════
 
   Signaling Server (VPS 1):
-  - [ ] DNS record signal.ahmedhany.dev points to Signaling VPS IP
+  - [x] DNS record signal.ahmedhany.dev points to Signaling VPS IP
+  - [x] Oracle Cloud VCN Security List: ports 80, 443 open
+  - [x] iptables: ports 80, 443 added BEFORE REJECT rule
   - [ ] SSL certificate obtained for signal.ahmedhany.dev
   - [ ] .env file configured with Firebase credentials
   - [ ] .env file has TURN_SECRET and TURN_DOMAIN=turn.ahmedhany.dev
-  - [ ] Firewall ports open (22, 80, 443)
-  - [ ] Docker container running
+  - [ ] PM2 process running
   - [ ] Nginx configured and running
   - [ ] curl https://signal.ahmedhany.dev/health returns OK
 
   TURN Server (VPS 2):
   - [ ] DNS record turn.ahmedhany.dev points to TURN VPS IP
+  - [ ] Oracle Cloud VCN Security List: ports 80, 3478, 5349, 49152-65535 open
+  - [ ] iptables: TURN ports added BEFORE REJECT rule
   - [ ] SSL certificate obtained for turn.ahmedhany.dev
   - [ ] /etc/turnserver.conf has correct external-ip (TURN VPS IP)
   - [ ] static-auth-secret matches TURN_SECRET from Signaling Server
-  - [ ] Firewall ports open (22, 80, 3478/udp, 3478/tcp, 5349/tcp, 49152-65535/udp)
   - [ ] Coturn service running
   - [ ] TURN connectivity test passes
 

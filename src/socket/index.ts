@@ -3,6 +3,19 @@ import admin from 'firebase-admin';
 import { verifySocketToken } from '../middleware/auth.middleware';
 import { getIceServerConfig } from '../services/turn-credential.service';
 
+// WebRTC types (server just forwards these, doesn't process them)
+interface RTCSessionDescriptionInit {
+  type?: 'offer' | 'answer' | 'pranswer' | 'rollback';
+  sdp?: string;
+}
+
+interface RTCIceCandidateInit {
+  candidate?: string;
+  sdpMLineIndex?: number | null;
+  sdpMid?: string | null;
+  usernameFragment?: string | null;
+}
+
 interface RoomParticipant {
   socketId: string;
   odId: string;
