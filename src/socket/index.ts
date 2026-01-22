@@ -59,6 +59,10 @@ export function setupSocketHandlers(io: Server): void {
       handleIceCandidate(socket, data);
     });
 
+    socket.on('video-state', (data: { enabled: boolean; to: string }) => {
+      handleVideoState(socket, data);
+    });
+
     socket.on('leave-room', (data: { callId: string }) => {
       handleLeaveRoom(io, socket, data.callId, user.uid);
     });
@@ -140,6 +144,14 @@ function handleAnswer(socket: Socket, data: { answer: RTCSessionDescriptionInit;
 function handleIceCandidate(socket: Socket, data: { candidate: RTCIceCandidateInit; to: string }): void {
   socket.to(data.to).emit('ice-candidate', {
     candidate: data.candidate,
+    from: socket.id,
+  });
+}
+
+function handleVideoState(socket: Socket, data: { enabled: boolean; to: string }): void {
+  console.log(`Forwarding video state (${data.enabled}) from ${socket.id} to ${data.to}`);
+  socket.to(data.to).emit('video-state', {
+    enabled: data.enabled,
     from: socket.id,
   });
 }
