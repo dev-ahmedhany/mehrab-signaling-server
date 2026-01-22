@@ -303,43 +303,56 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
 
   Add the following configuration:
 
-  # Network settings
+  # --- LISTENING PORTS ---
   listening-port=3478
   tls-listening-port=5349
 
-  # YOUR TURN SERVER'S PUBLIC IP (required!)
+  # --- NETWORK ---
+  # YOUR TURN SERVER'S PUBLIC IP
   external-ip=TURN_VPS_PUBLIC_IP
 
+  # --- PERFORMANCE TWEAKS ---
   # Relay address range
+  # 49152-65535 gives you ~16,000 ports.
+  # Since you want 3000+ users, this is safe (approx 5 ports per user).
   min-port=49152
   max-port=65535
 
-  # Realm
+  # AUTHENTICATION
   realm=ahmedhany.dev
-
-  # Authentication (use SAME secret as signaling server!)
   use-auth-secret
   static-auth-secret=SAME_TURN_SECRET_AS_SIGNALING_SERVER
 
-  # SSL Certificates
+  # SSL (Let's Encrypt)
   cert=/etc/letsencrypt/live/turn.ahmedhany.dev/fullchain.pem
   pkey=/etc/letsencrypt/live/turn.ahmedhany.dev/privkey.pem
 
-  # Logging
-  log-file=/var/log/turnserver.log
-  verbose
+  # --- LOGGING (CRITICAL CHANGE) ---
+  # Disable verbose for production!
+  # verbose
+  # log-file=/var/log/turnserver.log
+  # Use syslog instead to let the OS handle log rotation nicely
+  syslog
 
-  # Security
+  # --- SECURITY ---
   no-multicast-peers
+  # (Your manual IP blocks are good, keep them if you wish,
+  # but no-loopback-peers handles 127.0.0.0 automatically)
   denied-peer-ip=10.0.0.0-10.255.255.255
   denied-peer-ip=172.16.0.0-172.31.255.255
   denied-peer-ip=192.168.0.0-192.168.255.255
-  denied-peer-ip=127.0.0.0-127.255.255.255
 
+  # --- WEBRTC STANDARDS ---
   fingerprint
   lt-cred-mech
-  user-quota=10
   stale-nonce=600
+
+  # --- ANTI-ABUSE ---
+  # Limit allocations per user session to save RAM/Ports
+  user-quota=10
+  total-quota=10000
+
+  # Security
   no-cli
 
   Get your public IP:
@@ -374,11 +387,57 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   Step 21: Verify TURN Server Deployment
 
   # Test TURN server
-  sudo apt install coturn-utils -y
   turnutils_uclient -T -u "test:user" -w "test" turn.ahmedhany.dev -p 3478
 
   # Or test from external using:
   # https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/
+
+  ---
+  Step 22: Essential OS Tuning (TURN Server)
+
+  Hetzner's default Ubuntu image limits open files. If you have 3,000 users, you need at least 6,000 open file descriptors (sockets).
+
+  Run these commands:
+
+  # Open the system limits file:
+  sudo nano /etc/security/limits.conf
+
+  # Add these lines at the bottom:
+  *       soft    nofile  65535
+  *       hard    nofile  65535
+  root    soft    nofile  65535
+  root    hard    nofile  65535
+  turnserver soft nofile 65535
+  turnserver hard nofile 65535
+
+  # Edit the systemd service override (to ensure the service sees these limits):
+  sudo systemctl edit coturn
+  # (Or turnserver depending on how it's named in your install).
+
+  # Add these lines into the editor that opens:
+  [Service]
+  LimitNOFILE=65536
+
+  # Restart the service:
+  sudo systemctl daemon-reload
+  sudo systemctl restart coturn
+
+  ---
+  Step 23: Firewall (UFW) - TURN Server
+
+  Make sure you open the entire range of ports, not just the listening port, or audio will fail.
+
+  # Allow the listening ports
+  sudo ufw allow 3478/tcp
+  sudo ufw allow 3478/udp
+  sudo ufw allow 5349/tcp
+  sudo ufw allow 5349/udp
+
+  # CRITICAL: Allow the relay port range for audio traffic
+  sudo ufw allow 49152:65535/udp
+  sudo ufw allow 49152:65535/tcp
+
+  sudo ufw enable
 
   ═══════════════════════════════════════════════════════════════════════════════
   QUICK COMMANDS REFERENCE

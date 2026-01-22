@@ -42,17 +42,28 @@ export function generateTurnCredentials(userId: string): TurnCredentials {
 
 export function getIceServerConfig(userId: string): IceServerConfig {
   const turnCredentials = generateTurnCredentials(userId);
+  const domain = config.turn.domain;
 
   return {
     iceServers: [
       {
-        urls: 'stun:stun.l.google.com:19302',
+        urls: [
+          'stun:stun.l.google.com:19302',
+          `stun:${domain}:3478`,
+        ],
       },
       {
-        urls: 'stun:stun1.l.google.com:19302',
+        urls: `turn:${domain}:3478?transport=udp`,
+        username: turnCredentials.username,
+        credential: turnCredentials.credential,
       },
       {
-        urls: turnCredentials.uris,
+        urls: `turn:${domain}:3478?transport=tcp`,
+        username: turnCredentials.username,
+        credential: turnCredentials.credential,
+      },
+      {
+        urls: `turns:${domain}:5349?transport=tcp`,
         username: turnCredentials.username,
         credential: turnCredentials.credential,
       },
