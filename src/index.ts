@@ -68,6 +68,42 @@ app.get('/api/turn-credentials', verifyFirebaseToken, (req: AuthenticatedRequest
   res.json(iceConfig);
 });
 
+app.post('/api/send-notification', verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const { token, topic, title, body, data } = req.body;
+
+  if ((!token && !topic) || !title || !body) {
+    res.status(400).json({ error: 'Missing required fields: token or topic, title, body' });
+    return;
+  }
+
+  try {
+    const message: any = {
+      notification: {
+        title,
+        body,
+      },
+      data: data || {},
+    };
+
+    if (token) {
+      message.token = token;
+    } else if (topic) {
+      message.topic = topic;
+    }
+
+    const response = await admin.messaging().send(message);
+    res.json({ success: true, messageId: response });
+  } catch (error) {
+    console.error('Error sending notification:', error);
+    res.status(500).json({ error: 'Failed to send notification' });
+  }
+});
+
 setupSocketHandlers(io);
 
 httpServer.listen(config.port, () => {

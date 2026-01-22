@@ -83,23 +83,10 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   sudo npm install -g pm2
 
   # Install Certbot and Nginx
-  sudo apt install -y certbot nginx git
+  sudo apt install -y certbot nginx git python3-certbot-nginx
 
   ---
-  Step 6: Get SSL Certificate (Signaling Server)
-
-  # Stop nginx temporarily (if running)
-  sudo systemctl stop nginx
-
-  # Get certificate for signaling domain
-  sudo certbot certonly --standalone -d signal.ahmedhany.dev
-
-  # Certificate saved to:
-  # /etc/letsencrypt/live/signal.ahmedhany.dev/fullchain.pem
-  # /etc/letsencrypt/live/signal.ahmedhany.dev/privkey.pem
-
-  ---
-  Step 7: Clone and Configure the Project (Signaling Server)
+  Step 6: Clone and Configure the Project (Signaling Server)
 
   # Clone your repository
   cd /opt
@@ -114,7 +101,7 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   npm run build
 
   ---
-  Step 8: Create Environment File (Signaling Server)
+  Step 7: Create Environment File (Signaling Server)
 
   nano .env
 
@@ -143,7 +130,9 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   IMPORTANT: Save this TURN_SECRET - you'll need the same value on the TURN server!
 
   ---
-  Step 9: Configure Nginx Reverse Proxy (Signaling Server)
+  Step 8: Configure Basic Nginx Reverse Proxy (Signaling Server)
+
+  # Create basic HTTP config first, then run certbot --nginx to add SSL
 
   sudo nano /etc/nginx/sites-available/signal.ahmedhany.dev
 
@@ -159,8 +148,9 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
       listen 443 ssl http2;
       server_name signal.ahmedhany.dev;
 
-      ssl_certificate /etc/letsencrypt/live/signal.ahmedhany.dev/fullchain.pem;
-      ssl_certificate_key /etc/letsencrypt/live/signal.ahmedhany.dev/privkey.pem;
+      # SSL certs will be added by certbot --nginx
+      # ssl_certificate /etc/letsencrypt/live/signal.ahmedhany.dev/fullchain.pem;
+      # ssl_certificate_key /etc/letsencrypt/live/signal.ahmedhany.dev/privkey.pem;
 
       ssl_protocols TLSv1.2 TLSv1.3;
       ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
@@ -187,7 +177,26 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   sudo systemctl enable nginx
 
   ---
+  Step 9: Get SSL Certificate (Signaling Server)
+
+  # Now that basic Nginx config is in place, get cert using the Nginx plugin
+  # This will automatically edit the Nginx config to add SSL paths
+  sudo certbot --nginx -d signal.ahmedhany.dev
+
+  ---
   Step 10: Start Signaling Server with PM2
+
+  # First, increase OS limits for WebSocket connections
+  sudo nano /etc/security/limits.conf
+
+  # Add these lines at the bottom:
+  * soft nofile 65535
+  * hard nofile 65535
+  root soft nofile 65535
+  root hard nofile 65535
+
+  # Logout and log back in, then verify:
+  ulimit -n  # Should show 65535
 
   cd /opt/mehrab-signaling-server
 
@@ -214,7 +223,7 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
 
   Add:
 
-  0 0 1 * * certbot renew --quiet --post-hook "systemctl reload nginx"
+  0 12 * * * /usr/bin/certbot renew --quiet
 
   ---
   Step 12: Verify Signaling Server Deployment
@@ -557,6 +566,7 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   - [x] DNS record signal.ahmedhany.dev points to Signaling VPS IP
   - [x] Oracle Cloud VCN Security List: ports 80, 443 open
   - [x] iptables: ports 80, 443 added BEFORE REJECT rule
+  - [ ] OS limits increased (ulimit -n shows 65535)
   - [ ] SSL certificate obtained for signal.ahmedhany.dev
   - [ ] .env file configured with Firebase credentials
   - [ ] .env file has TURN_SECRET and TURN_DOMAIN=turn.ahmedhany.dev
