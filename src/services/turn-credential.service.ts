@@ -55,12 +55,12 @@ export function getIceServerConfig(userId: string): IceServerConfig {
         credential: turnCredentials.credential,
       },
       {
-        urls: `turn:${domain}:3478?transport=tcp`,
+        urls: `turn:${domain}:80?transport=tcp`,
         username: turnCredentials.username,
         credential: turnCredentials.credential,
       },
       {
-        urls: `turns:${domain}:5349?transport=tcp`,
+        urls: `turns:${domain}:443?transport=tcp`,
         username: turnCredentials.username,
         credential: turnCredentials.credential,
       },
