@@ -31,20 +31,19 @@ const rooms = new Map<string, RoomState>();
 
 export function setupSocketHandlers(io: Server): void {
   io.use(async (socket, next) => {
+    // Temporarily allow non-auth users
     const user = await verifySocketToken(socket);
-    if (!user) {
-      return next(new Error('Authentication failed'));
-    }
-    socket.data.user = user;
+    socket.data.user = user; // Can be null for non-auth users
     next();
   });
 
   io.on('connection', (socket: Socket) => {
-    const user = socket.data.user as admin.auth.DecodedIdToken;
-    console.log(`User connected: ${user.uid} (socket: ${socket.id})`);
+    const user = socket.data.user as admin.auth.DecodedIdToken | null;
+    const userId = user ? user.uid : `guest-${socket.id}`;
+    console.log(`User connected: ${userId} (socket: ${socket.id})`);
 
     socket.on('join-room', (data: { callId: string }) => {
-      handleJoinRoom(io, socket, data.callId, user.uid);
+      handleJoinRoom(io, socket, data.callId, userId);
     });
 
     socket.on('offer', (data: { offer: RTCSessionDescriptionInit; to: string }) => {
@@ -64,16 +63,16 @@ export function setupSocketHandlers(io: Server): void {
     });
 
     socket.on('leave-room', (data: { callId: string }) => {
-      handleLeaveRoom(io, socket, data.callId, user.uid);
+      handleLeaveRoom(io, socket, data.callId, userId);
     });
 
     socket.on('get-ice-config', (callback: (config: ReturnType<typeof getIceServerConfig>) => void) => {
-      const iceConfig = getIceServerConfig(user.uid);
+      const iceConfig = getIceServerConfig(userId);
       callback(iceConfig);
     });
 
     socket.on('disconnect', () => {
-      handleDisconnect(io, socket, user.uid);
+      handleDisconnect(io, socket, userId);
     });
   });
 }
@@ -124,20 +123,26 @@ function handleJoinRoom(io: Server, socket: Socket, callId: string, odId: string
 function handleOffer(socket: Socket, data: { offer: RTCSessionDescriptionInit; to: string }): void {
   console.log(`Forwarding offer from ${socket.id} to ${data.to}`);
 
+  const user = socket.data.user as admin.auth.DecodedIdToken | null;
+  const fromUid = user ? user.uid : `guest-${socket.id}`;
+
   socket.to(data.to).emit('offer', {
     offer: data.offer,
     from: socket.id,
-    fromUid: socket.data.user.uid,
+    fromUid,
   });
 }
 
 function handleAnswer(socket: Socket, data: { answer: RTCSessionDescriptionInit; to: string }): void {
   console.log(`Forwarding answer from ${socket.id} to ${data.to}`);
 
+  const user = socket.data.user as admin.auth.DecodedIdToken | null;
+  const fromUid = user ? user.uid : `guest-${socket.id}`;
+
   socket.to(data.to).emit('answer', {
     answer: data.answer,
     from: socket.id,
-    fromUid: socket.data.user.uid,
+    fromUid,
   });
 }
 

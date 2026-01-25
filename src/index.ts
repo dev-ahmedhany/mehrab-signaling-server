@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import admin from 'firebase-admin';
 import path from 'path';
+import crypto from 'crypto';
 
 import { config, validateConfig } from './config';
 import { verifyFirebaseToken, AuthenticatedRequest } from './middleware/auth.middleware';
@@ -59,20 +60,14 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/api/turn-credentials', verifyFirebaseToken, (req: AuthenticatedRequest, res) => {
-  if (!req.user) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return;
-  }
-
-  const iceConfig = getIceServerConfig(req.user.uid);
+  const userId = req.user ? req.user.uid : `guest-${crypto.randomUUID()}`;
+  const iceConfig = getIceServerConfig(userId);
   res.json(iceConfig);
 });
 
 app.post('/api/send-notification', verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
-  if (!req.user) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return;
-  }
+  // Temporarily allow non-auth users
+  const userId = req.user ? req.user.uid : `guest-${crypto.randomUUID()}`;
 
   const { token, topic, title, body, data } = req.body;
 
