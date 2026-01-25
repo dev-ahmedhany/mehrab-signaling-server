@@ -7,9 +7,9 @@ import path from 'path';
 import crypto from 'crypto';
 
 import { config, validateConfig } from './config';
-import { verifyFirebaseToken, AuthenticatedRequest } from './middleware/auth.middleware';
+import { verifyFirebaseToken, verifyAdminToken, AuthenticatedRequest } from './middleware/auth.middleware';
 import { getIceServerConfig } from './services/turn-credential.service';
-import { setupSocketHandlers, getRoomStats } from './socket';
+import { setupSocketHandlers, getRoomStats, getDetailedStats, getActiveRooms, getLogs } from './socket';
 
 validateConfig();
 
@@ -50,6 +50,9 @@ if (config.nodeEnv === 'development') {
   app.use('/test', express.static(path.join(__dirname, '../test-client')));
 }
 
+// Serve admin dashboard
+app.use('/admin', express.static(path.join(__dirname, '../admin-dashboard')));
+
 app.get('/health', (req, res) => {
   const stats = getRoomStats();
   res.json({
@@ -59,6 +62,23 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Admin API endpoints - protected with Firebase Auth (admin only)
+app.get('/api/admin/stats', verifyAdminToken, async (req: AuthenticatedRequest, res) => {
+  const stats = await getDetailedStats();
+  res.json(stats);
+});
+
+app.get('/api/admin/rooms', verifyAdminToken, async (req: AuthenticatedRequest, res) => {
+  const rooms = await getActiveRooms();
+  res.json({ rooms });
+});
+
+app.get('/api/admin/logs', verifyAdminToken, (req: AuthenticatedRequest, res) => {
+  const limit = parseInt(req.query.limit as string) || 100;
+  const logs = getLogs(limit);
+  res.json({ logs });
+});
+
 app.get('/api/turn-credentials', verifyFirebaseToken, (req: AuthenticatedRequest, res) => {
   const userId = req.user ? req.user.uid : `guest-${crypto.randomUUID()}`;
   const iceConfig = getIceServerConfig(userId);
@@ -66,9 +86,6 @@ app.get('/api/turn-credentials', verifyFirebaseToken, (req: AuthenticatedRequest
 });
 
 app.post('/api/send-notification', verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
-  // Temporarily allow non-auth users
-  const userId = req.user ? req.user.uid : `guest-${crypto.randomUUID()}`;
-
   const { token, topic, title, body, data } = req.body;
 
   if ((!token && !topic) || !title || !body) {
@@ -77,19 +94,14 @@ app.post('/api/send-notification', verifyFirebaseToken, async (req: Authenticate
   }
 
   try {
-    const message: any = {
-      notification: {
-        title,
-        body,
-      },
+    const baseMessage = {
+      notification: { title, body },
       data: data || {},
     };
 
-    if (token) {
-      message.token = token;
-    } else if (topic) {
-      message.topic = topic;
-    }
+    const message: admin.messaging.Message = token
+      ? { ...baseMessage, token }
+      : { ...baseMessage, topic };
 
     const response = await admin.messaging().send(message);
     res.json({ success: true, messageId: response });
