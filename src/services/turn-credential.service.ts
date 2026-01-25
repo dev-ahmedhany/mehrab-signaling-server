@@ -46,22 +46,22 @@ export function getIceServerConfig(userId: string): IceServerConfig {
 
   return {
     iceServers: [
-      {
-        urls: [
-          'stun:stun.l.google.com:19302',
-          `stun:${domain}:3478`,
-        ],
-      },
-      {
-        urls: `turn:${domain}:3478?transport=udp`,
-        username: turnCredentials.username,
-        credential: turnCredentials.credential,
-      },
-      {
-        urls: `turn:${domain}:3478?transport=tcp`,
-        username: turnCredentials.username,
-        credential: turnCredentials.credential,
-      },
+      // {
+      //   urls: [
+      //     'stun:stun.l.google.com:19302',
+      //     `stun:${domain}:3478`,
+      //   ],
+      // },
+      // {
+      //   urls: `turn:${domain}:3478?transport=udp`,
+      //   username: turnCredentials.username,
+      //   credential: turnCredentials.credential,
+      // },
+      // {
+      //   urls: `turn:${domain}:3478?transport=tcp`,
+      //   username: turnCredentials.username,
+      //   credential: turnCredentials.credential,
+      // },
       {
         urls: `turns:${domain}:5349?transport=tcp`,
         username: turnCredentials.username,
