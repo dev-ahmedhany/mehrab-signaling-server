@@ -207,12 +207,6 @@ export function setupSocketHandlers(io: Server): void {
       }
 
       socket.join('admin-room');
-      addLog({
-        type: 'info',
-        message: `Admin dashboard connected: ${adminUser.email}`,
-        socketId: socket.id,
-        userId: adminUser.uid,
-      });
 
       // Send current stats immediately
       const stats = await getDetailedStats();
