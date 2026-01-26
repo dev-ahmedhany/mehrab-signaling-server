@@ -14,6 +14,7 @@ export interface IceServerConfig {
     username?: string;
     credential?: string;
   }>;
+  iceTransportPolicy?: 'all' | 'relay';
 }
 
 export function generateTurnCredentials(userId: string): TurnCredentials {
@@ -47,9 +48,6 @@ export function getIceServerConfig(userId: string): IceServerConfig {
   return {
     iceServers: [
       {
-        urls:'stun:stun.l.google.com:19302',
-      },
-      {
         urls: `turn:${domain}:3478?transport=udp`,
         username: turnCredentials.username,
         credential: turnCredentials.credential,
@@ -65,5 +63,6 @@ export function getIceServerConfig(userId: string): IceServerConfig {
         credential: turnCredentials.credential,
       },
     ],
+    iceTransportPolicy: "relay"
   };
 }
