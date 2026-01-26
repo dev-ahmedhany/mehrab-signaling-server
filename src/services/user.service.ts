@@ -5,6 +5,11 @@ export interface UserInfo {
   displayName: string;
   photoURL: string | null;
   email?: string;
+  deviceModel?: string;
+  deviceVersion?: string;
+  countryCode?: string;
+  phoneNumber?: string;
+  countryCodeNumber?: string;
 }
 
 // Cache user info to reduce Firestore reads
@@ -40,6 +45,11 @@ export async function getUserInfo(uid: string): Promise<UserInfo> {
         displayName: data?.name || data?.displayName || 'Unknown User',
         photoURL: data?.profileImage || data?.photoURL || data?.photo || null,
         email: data?.email,
+        deviceModel: data?.deviceModel,
+        deviceVersion: data?.deviceVersion,
+        countryCode: data?.countryCode,
+        phoneNumber: data?.phoneNumber,
+        countryCodeNumber: data?.countryCodeNumber,
       };
 
       // Cache the result
@@ -129,6 +139,11 @@ export async function getUsersInfo(uids: string[]): Promise<Map<string, UserInfo
             displayName: data?.name || data?.displayName || 'Unknown User',
             photoURL: data?.profileImage || data?.photoURL || data?.photo || null,
             email: data?.email,
+            deviceModel: data?.deviceModel,
+            deviceVersion: data?.deviceVersion,
+            countryCode: data?.countryCode,
+            phoneNumber: data?.phoneNumber,
+            countryCodeNumber: data?.countryCodeNumber,
           };
 
           results.set(doc.id, userInfo);

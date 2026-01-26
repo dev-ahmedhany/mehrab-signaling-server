@@ -48,6 +48,11 @@ export interface ParticipantInfo {
   duration: number;
   displayName?: string;
   photoURL?: string | null;
+  deviceModel?: string;
+  deviceVersion?: string;
+  countryCode?: string;
+  phoneNumber?: string;
+  countryCodeNumber?: string;
 }
 
 export interface RoomInfo {
@@ -164,6 +169,11 @@ export async function getActiveRooms(): Promise<RoomInfo[]> {
         duration: Math.floor((now.getTime() - p.joinedAt.getTime()) / 1000),
         displayName: userInfo?.displayName || p.displayName || 'Unknown',
         photoURL: userInfo?.photoURL || null,
+        deviceModel: userInfo?.deviceModel,
+        deviceVersion: userInfo?.deviceVersion,
+        countryCode: userInfo?.countryCode,
+        phoneNumber: userInfo?.phoneNumber,
+        countryCodeNumber: userInfo?.countryCodeNumber,
       };
     });
 
