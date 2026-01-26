@@ -34,8 +34,8 @@ export function generateTurnCredentials(userId: string): TurnCredentials {
     uris: [
       `stun:${domain}:3478`,
       `turn:${domain}:3478?transport=udp`,
-      `turn:${domain}:3478?transport=tcp`,
-      `turns:${domain}:5349?transport=tcp`,
+      `turn:${domain}:80?transport=tcp`,
+      `turns:${domain}:443?transport=tcp`,
     ],
   };
 }

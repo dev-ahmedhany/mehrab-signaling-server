@@ -252,9 +252,7 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   | Source CIDR | IP Protocol | Destination Port Range |
   |-------------|-------------|------------------------|
   | 0.0.0.0/0   | TCP         | 80                     |
-  | 0.0.0.0/0   | TCP         | 3478                   |
-  | 0.0.0.0/0   | UDP         | 3478                   |
-  | 0.0.0.0/0   | TCP         | 5349                   |
+  | 0.0.0.0/0   | TCP         | 443                    |
   | 0.0.0.0/0   | UDP         | 49152-65535            |
 
   Note: Leave "Source Port Range" empty for all rules.
@@ -274,10 +272,8 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   # Add TURN ports BEFORE the REJECT rule
 
   sudo iptables -I INPUT 5 -p tcp --dport 80 -m state --state NEW -j ACCEPT
-  sudo iptables -I INPUT 6 -p tcp --dport 3478 -m state --state NEW -j ACCEPT
-  sudo iptables -I INPUT 7 -p udp --dport 3478 -j ACCEPT
-  sudo iptables -I INPUT 8 -p tcp --dport 5349 -m state --state NEW -j ACCEPT
-  sudo iptables -I INPUT 9 -p udp --dport 49152:65535 -j ACCEPT
+  sudo iptables -I INPUT 6 -p tcp --dport 443 -m state --state NEW -j ACCEPT
+  sudo iptables -I INPUT 7 -p udp --dport 49152:65535 -j ACCEPT
 
   # Verify the rules were added correctly
   sudo iptables -L INPUT -n --line-numbers
@@ -312,52 +308,41 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
 
   Add the following configuration:
 
-  # --- LISTENING PORTS ---
-  listening-port=3478
-  tls-listening-port=5349
+  # Listening ports for TURN (unencrypted) and TURNS (TLS encrypted)
+  listening-port=80
+  tls-listening-port=443
 
-  # --- NETWORK ---
-  # YOUR TURN SERVER'S PUBLIC IP
-  external-ip=TURN_VPS_PUBLIC_IP
+  # Server's public IP address
+  listening-ip=YOUR_SERVER_IP
+  external-ip=YOUR_SERVER_IP
 
-  # --- PERFORMANCE TWEAKS ---
-  # Relay address range
-  # 49152-65535 gives you ~16,000 ports.
-  # Since you want 3000+ users, this is safe (approx 5 ports per user).
+  # UDP port range for media relay
   min-port=49152
   max-port=65535
 
-  # AUTHENTICATION
-  realm=ahmedhany.dev
-  use-auth-secret
+  # Standard, secure authentication mechanism
+  lt-cred-mech
   static-auth-secret=SAME_TURN_SECRET_AS_SIGNALING_SERVER
 
-  # SSL (Let's Encrypt)
-  cert=/etc/letsencrypt/live/turn.ahmedhany.dev/fullchain.pem
-  pkey=/etc/letsencrypt/live/turn.ahmedhany.dev/privkey.pem
+  # Domain realm
+  realm=ahmedhany.dev
 
-  # --- LOGGING (CRITICAL CHANGE) ---
-  # Disable verbose for production!
-  # verbose
-  # log-file=/var/log/turnserver.log
-  # Use syslog instead to let the OS handle log rotation nicely
+  # SSL certificates (copied to accessible location)
+  cert=/etc/coturn/certs/cert.pem
+  pkey=/etc/coturn/certs/privkey.pem
+
+  # Logging
   syslog
+  no-stdout-log
 
-  # --- SECURITY ---
+  # Security
   no-multicast-peers
-  # (Your manual IP blocks are good, keep them if you wish,
-  # but no-loopback-peers handles 127.0.0.0 automatically)
-  denied-peer-ip=10.0.0.0-10.255.255.255
-  denied-peer-ip=172.16.0.0-172.31.255.255
-  denied-peer-ip=192.168.0.0-192.168.255.255
+  no-loopback-peers
 
-  # --- WEBRTC STANDARDS ---
+  # WebRTC standards
   fingerprint
-  lt-cred-mech
-  stale-nonce=600
 
-  # --- ANTI-ABUSE ---
-  # Limit allocations per user session to save RAM/Ports
+  # Anti-abuse
   user-quota=10
   total-quota=10000
 
@@ -366,6 +351,16 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
 
   Get your public IP:
   curl ifconfig.me
+
+  # Create directory for Coturn certificates
+  sudo mkdir -p /etc/coturn/certs
+
+  # Copy certificates
+  sudo cp -L /etc/letsencrypt/live/turn.ahmedhany.dev/fullchain.pem /etc/coturn/certs/cert.pem
+  sudo cp -L /etc/letsencrypt/live/turn.ahmedhany.dev/privkey.pem /etc/coturn/certs/privkey.pem
+
+  # Change ownership
+  sudo chown -R turnserver:turnserver /etc/coturn/certs
 
   ---
   Step 19: Enable and Start Coturn
@@ -390,13 +385,13 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
 
   Add:
 
-  0 0 1 * * certbot renew --quiet --post-hook "systemctl restart coturn"
+  0 0 1 * * certbot renew --quiet --post-hook "cp -L /etc/letsencrypt/live/turn.ahmedhany.dev/fullchain.pem /etc/coturn/certs/cert.pem && cp -L /etc/letsencrypt/live/turn.ahmedhany.dev/privkey.pem /etc/coturn/certs/privkey.pem && chown -R turnserver:turnserver /etc/coturn/certs && systemctl restart coturn"
 
   ---
   Step 21: Verify TURN Server Deployment
 
   # Test TURN server
-  turnutils_uclient -T -u "test:user" -w "test" turn.ahmedhany.dev -p 3478
+  turnutils_uclient -T -u "test:user" -w "test" turn.ahmedhany.dev -p 80
 
   # Or test from external using:
   # https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/
@@ -437,10 +432,9 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   Make sure you open the entire range of ports, not just the listening port, or audio will fail.
 
   # Allow the listening ports
-  sudo ufw allow 3478/tcp
-  sudo ufw allow 3478/udp
-  sudo ufw allow 5349/tcp
-  sudo ufw allow 5349/udp
+  sudo ufw allow 80/tcp
+  sudo ufw allow 443/tcp
+  sudo ufw allow 443/udp
 
   # CRITICAL: Allow the relay port range for audio traffic
   sudo ufw allow 49152:65535/udp
@@ -553,7 +547,7 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
   If SSL issues on TURN Server:
   ---
   # Check certificate
-  openssl s_client -connect turn.ahmedhany.dev:5349 -servername turn.ahmedhany.dev
+  openssl s_client -connect turn.ahmedhany.dev:443 -servername turn.ahmedhany.dev
 
   # Verify certificate paths in /etc/turnserver.conf
   grep -E "cert=|pkey=" /etc/turnserver.conf
@@ -576,14 +570,16 @@ Here's a step-by-step guide to deploy the signaling server and TURN server on se
 
   TURN Server (VPS 2):
   - [ ] DNS record turn.ahmedhany.dev points to TURN VPS IP
-  - [ ] Oracle Cloud VCN Security List: ports 80, 3478, 5349, 49152-65535 open
+  - [ ] Oracle Cloud VCN Security List: ports 80, 443, 49152-65535 open
   - [ ] iptables: TURN ports added BEFORE REJECT rule
   - [ ] SSL certificate obtained for turn.ahmedhany.dev
+  - [ ] /etc/coturn/certs/ has copied certificates with correct ownership
   - [ ] /etc/turnserver.conf has correct external-ip (TURN VPS IP)
   - [ ] static-auth-secret matches TURN_SECRET from Signaling Server
+  - [ ] systemd override configured for coturn
   - [ ] Coturn service running
   - [ ] TURN connectivity test passes
 
   Both Servers:
   - [ ] TURN_SECRET is identical on both servers
-  - [ ] Flutter app updated with production URLs
+  - [ ] Flutter app updated with production iceServers configuration (turns:turn.ahmedhany.dev:443?transport=tcp, turns:turn.ahmedhany.dev:443?transport=udp, turn:turn.ahmedhany.dev:80?transport=udp, stun:turn.ahmedhany.dev:80)
