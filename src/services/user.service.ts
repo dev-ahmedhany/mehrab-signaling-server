@@ -9,7 +9,7 @@ export interface UserInfo {
 
 // Cache user info to reduce Firestore reads
 const userCache = new Map<string, { data: UserInfo; expiry: number }>();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 5 * 60 * 60 * 1000; // 5 hours
 
 export async function getUserInfo(uid: string): Promise<UserInfo> {
   // Check cache first
