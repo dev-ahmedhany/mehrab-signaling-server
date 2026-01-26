@@ -1,5 +1,7 @@
 import { Server, Socket } from 'socket.io';
 import admin from 'firebase-admin';
+import fs from 'fs';
+import path from 'path';
 import { verifySocketToken, verifyAdminSocketToken } from '../middleware/auth.middleware';
 import { getIceServerConfig } from '../services/turn-credential.service';
 import { getUsersInfo } from '../services/user.service';
@@ -54,6 +56,53 @@ export interface RoomInfo {
   callConnectedAt?: Date;
   duration: number;
   participants: ParticipantInfo[];
+}
+
+const ROOMS_FILE = path.join(__dirname, '../../data/rooms.json');
+
+// Persistence functions
+function saveRooms(): void {
+  try {
+    const dataDir = path.dirname(ROOMS_FILE);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+
+    const roomsData = Array.from(rooms.entries()).map(([callId, room]) => ({
+      callId,
+      participants: Array.from(room.participants.entries()),
+      createdAt: room.createdAt.toISOString(),
+      callConnectedAt: room.callConnectedAt?.toISOString(),
+    }));
+
+    fs.writeFileSync(ROOMS_FILE, JSON.stringify(roomsData, null, 2));
+  } catch (error) {
+    console.error('Failed to save rooms:', error);
+  }
+}
+
+function loadRooms(): void {
+  try {
+    if (fs.existsSync(ROOMS_FILE)) {
+      const data: Array<{
+        callId: string;
+        participants: [string, RoomParticipant][];
+        createdAt: string;
+        callConnectedAt?: string;
+      }> = JSON.parse(fs.readFileSync(ROOMS_FILE, 'utf-8'));
+      for (const roomData of data) {
+        const participants = new Map(roomData.participants);
+        rooms.set(roomData.callId, {
+          participants,
+          createdAt: new Date(roomData.createdAt),
+          callConnectedAt: roomData.callConnectedAt ? new Date(roomData.callConnectedAt) : undefined,
+        });
+      }
+      console.log(`Loaded ${rooms.size} rooms from persistence`);
+    }
+  } catch (error) {
+    console.error('Failed to load rooms:', error);
+  }
 }
 
 const rooms = new Map<string, RoomState>();
@@ -153,6 +202,8 @@ export async function getDetailedStats(): Promise<{
 }
 
 export function setupSocketHandlers(io: Server): void {
+  const serverStartTime = Date.now();
+  loadRooms();
   ioInstance = io;
 
   io.use(async (socket, next) => {
@@ -172,6 +223,49 @@ export function setupSocketHandlers(io: Server): void {
       userId,
       socketId: socket.id,
     });
+
+    // Auto-rejoin persisted rooms for authenticated users within first minute
+    if (Date.now() - serverStartTime < 60000 && userId && !userId.startsWith('guest-')) {
+      for (const [callId, room] of rooms.entries()) {
+        const existingParticipant = Array.from(room.participants.values()).find(p => p.odId === userId);
+        if (existingParticipant) {
+          // Update socket ID and rejoin
+          room.participants.delete(existingParticipant.socketId);
+          room.participants.set(socket.id, {
+            socketId: socket.id,
+            odId: userId,
+            joinedAt: new Date(),
+          });
+          saveRooms();
+
+          socket.join(callId);
+
+          const otherParticipants = Array.from(room.participants.values())
+            .filter(p => p.socketId !== socket.id)
+            .map(p => ({ odId: p.odId, socketId: p.socketId }));
+
+          socket.emit('room-joined', {
+            callId,
+            participants: otherParticipants,
+          });
+
+          socket.to(callId).emit('user-joined', {
+            odId: userId,
+            socketId: socket.id,
+          });
+
+          addLog({
+            type: 'info',
+            message: `User ${userId} auto-rejoined room ${callId} after server restart`,
+            roomId: callId,
+            userId,
+            socketId: socket.id,
+          });
+
+          break; // Assume user is only in one room
+        }
+      }
+    }
 
     socket.on('join-room', (data: { callId: string }) => {
       handleJoinRoom(io, socket, data.callId, userId);
@@ -233,6 +327,7 @@ function handleJoinRoom(io: Server, socket: Socket, callId: string, odId: string
       createdAt: new Date(),
     };
     rooms.set(callId, room);
+    saveRooms();
 
     addLog({
       type: 'call',
@@ -259,10 +354,12 @@ function handleJoinRoom(io: Server, socket: Socket, callId: string, odId: string
     odId,
     joinedAt: new Date(),
   });
+  saveRooms();
 
   // Mark call as connected when second participant joins
   if (room.participants.size === 2 && !room.callConnectedAt) {
     room.callConnectedAt = new Date();
+    saveRooms();
     addLog({
       type: 'call',
       message: `Call connected in room ${callId}`,
@@ -345,6 +442,7 @@ function handleLeaveRoom(io: Server, socket: Socket, callId: string, odId: strin
       : 0;
 
     room.participants.delete(socket.id);
+    saveRooms();
     socket.leave(callId);
 
     socket.to(callId).emit('user-left', {
@@ -363,6 +461,7 @@ function handleLeaveRoom(io: Server, socket: Socket, callId: string, odId: strin
     if (room.participants.size === 0) {
       const roomDuration = Math.floor((new Date().getTime() - room.createdAt.getTime()) / 1000);
       rooms.delete(callId);
+      saveRooms();
 
       addLog({
         type: 'call',
@@ -389,6 +488,7 @@ function handleDisconnect(io: Server, socket: Socket, odId: string): void {
         : 0;
 
       room.participants.delete(socket.id);
+      saveRooms();
 
       socket.to(callId).emit('user-left', {
         odId,
@@ -406,6 +506,7 @@ function handleDisconnect(io: Server, socket: Socket, odId: string): void {
       if (room.participants.size === 0) {
         const roomDuration = Math.floor((new Date().getTime() - room.createdAt.getTime()) / 1000);
         rooms.delete(callId);
+        saveRooms();
 
         addLog({
           type: 'call',
