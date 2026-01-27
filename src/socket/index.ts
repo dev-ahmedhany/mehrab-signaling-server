@@ -26,6 +26,13 @@ interface RoomParticipant {
   displayName?: string;
 }
 
+interface SerializedRoomParticipant {
+  socketId: string;
+  odId: string;
+  joinedAt: string;
+  displayName?: string;
+}
+
 interface RoomState {
   participants: Map<string, RoomParticipant>;
   createdAt: Date;
@@ -91,12 +98,17 @@ function loadRooms(): void {
     if (fs.existsSync(ROOMS_FILE)) {
       const data: Array<{
         callId: string;
-        participants: [string, RoomParticipant][];
+        participants: [string, SerializedRoomParticipant][];
         createdAt: string;
         callConnectedAt?: string;
       }> = JSON.parse(fs.readFileSync(ROOMS_FILE, 'utf-8'));
       for (const roomData of data) {
-        const participants = new Map(roomData.participants);
+        const participants = new Map(
+          roomData.participants.map(([socketId, participant]) => [
+            socketId,
+            { ...participant, joinedAt: new Date(participant.joinedAt) } as RoomParticipant
+          ])
+        );
         rooms.set(roomData.callId, {
           participants,
           createdAt: new Date(roomData.createdAt),
