@@ -39,6 +39,20 @@ export interface LogEntry {
   socketId?: string;
 }
 
+export interface ParticipantInfo {
+  odId: string;
+  socketId: string;
+  joinedAt: Date;
+  duration: number;
+  displayName?: string;
+  photoURL?: string | null;
+  deviceModel?: string;
+  deviceVersion?: string;
+  countryCode?: string;
+  phoneNumber?: string;
+  countryCodeNumber?: string;
+}
+
 // Helper to set user busy status if they are a teacher
 async function setUserBusy(uid: string, busy: boolean): Promise<void> {
   if (uid.startsWith('guest-')) return; // Skip guests
@@ -71,6 +85,7 @@ export interface RoomInfo {
 // and rejoining automatically. The grace period mechanism handles temporary disconnections.
 
 const rooms = new Map<string, RoomState>();
+const roomTimers = new Map<string, NodeJS.Timeout>(); // Timers for room deletion if no second participant
 const logs: LogEntry[] = [];
 const MAX_LOGS = 500;
 
@@ -278,6 +293,23 @@ function handleJoinRoom(io: Server, socket: Socket, callId: string, odId: string
     };
     rooms.set(callId, room);
 
+    // Set timer to delete room if no second participant joins within 1 minute
+    roomTimers.set(callId, setTimeout(() => {
+      const room = rooms.get(callId);
+      if (room && room.participants.size === 1) {
+        const participant = Array.from(room.participants.values())[0];
+        setUserBusy(participant.odId, false);
+        rooms.delete(callId);
+        roomTimers.delete(callId);
+        addLog({
+          type: 'warning',
+          message: `Room ${callId} deleted after 1 minute with only 1 participant`,
+          roomId: callId,
+          userId: participant.odId,
+        });
+      }
+    }, 60000));
+
     addLog({
       type: 'call',
       message: `New call room created: ${callId}`,
@@ -310,6 +342,14 @@ function handleJoinRoom(io: Server, socket: Socket, callId: string, odId: string
   // Mark call as connected when second participant joins
   if (room.participants.size === 2 && !room.callConnectedAt) {
     room.callConnectedAt = new Date();
+
+    // Cancel the room deletion timer
+    const timer = roomTimers.get(callId);
+    if (timer) {
+      clearTimeout(timer);
+      roomTimers.delete(callId);
+    }
+
     addLog({
       type: 'call',
       message: `Call connected in room ${callId}`,
@@ -418,6 +458,13 @@ function handleLeaveRoom(io: Server, socket: Socket, callId: string, odId: strin
     });
 
     if (room.participants.size === 0) {
+      // Clear the room deletion timer if exists
+      const timer = roomTimers.get(callId);
+      if (timer) {
+        clearTimeout(timer);
+        roomTimers.delete(callId);
+      }
+
       const roomDuration = Math.floor((new Date().getTime() - room.createdAt.getTime()) / 1000);
       rooms.delete(callId);
 
@@ -493,6 +540,13 @@ function handleDisconnect(io: Server, socket: Socket, odId: string): void {
         });
 
         if (room.participants.size === 0) {
+          // Clear the room deletion timer if exists
+          const timer = roomTimers.get(callId);
+          if (timer) {
+            clearTimeout(timer);
+            roomTimers.delete(callId);
+          }
+
           const roomDuration = Math.floor((new Date().getTime() - room.createdAt.getTime()) / 1000);
           rooms.delete(callId);
 
