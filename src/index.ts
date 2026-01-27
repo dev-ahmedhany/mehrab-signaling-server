@@ -100,8 +100,8 @@ app.post('/api/send-notification', verifyFirebaseToken, async (req: Authenticate
 
   console.log('Send notification request:', { hasToken: !!token, hasTopic: !!topic, title, body, hasData: !!data });
 
-  if ((!token && !topic) || !title || !body) {
-    res.status(400).json({ error: 'Missing required fields: token or topic, title, body' });
+  if (!topic || !title || !body) {
+    res.status(400).json({ error: 'Missing required fields: topic, title, body' });
     return;
   }
 
@@ -111,9 +111,7 @@ app.post('/api/send-notification', verifyFirebaseToken, async (req: Authenticate
       data: data || {},
     };
 
-    const message: admin.messaging.Message = token
-      ? { ...baseMessage, token }
-      : { ...baseMessage, topic };
+    const message: admin.messaging.Message = { ...baseMessage, topic };
 
     console.log('Sending FCM message:', { token: token ? '[REDACTED]' : undefined, topic, title, body });
     const response = await admin.messaging().send(message);
