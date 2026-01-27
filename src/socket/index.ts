@@ -39,18 +39,24 @@ export interface LogEntry {
   socketId?: string;
 }
 
-export interface ParticipantInfo {
-  odId: string;
-  socketId: string;
-  joinedAt: Date;
-  duration: number;
-  displayName?: string;
-  photoURL?: string | null;
-  deviceModel?: string;
-  deviceVersion?: string;
-  countryCode?: string;
-  phoneNumber?: string;
-  countryCodeNumber?: string;
+// Helper to set user busy status if they are a teacher
+async function setUserBusy(uid: string, busy: boolean): Promise<void> {
+  if (uid.startsWith('guest-')) return; // Skip guests
+
+  try {
+    const userDoc = await admin.firestore().collection('users').doc(uid).get();
+    if (userDoc.exists && userDoc.data()?.isOnline !== undefined) {
+      // It's a teacher
+      await admin.firestore().collection('users').doc(uid).update({ isBusy: busy });
+      addLog({
+        type: 'info',
+        message: `Set teacher ${uid} busy: ${busy}`,
+        userId: uid,
+      });
+    }
+  } catch (error) {
+    console.error(`Error setting busy for ${uid}:`, error);
+  }
 }
 
 export interface RoomInfo {
@@ -298,6 +304,9 @@ function handleJoinRoom(io: Server, socket: Socket, callId: string, odId: string
     joinedAt: new Date(),
   });
 
+  // Set teacher busy when joining room
+  setUserBusy(odId, true);
+
   // Mark call as connected when second participant joins
   if (room.participants.size === 2 && !room.callConnectedAt) {
     room.callConnectedAt = new Date();
@@ -392,6 +401,9 @@ function handleLeaveRoom(io: Server, socket: Socket, callId: string, odId: strin
     room.participants.delete(socket.id);
     socket.leave(callId);
 
+    // Set teacher not busy when leaving room
+    setUserBusy(odId, false);
+
     socket.to(callId).emit('user-left', {
       odId,
       socketId: socket.id,
@@ -462,6 +474,9 @@ function handleDisconnect(io: Server, socket: Socket, odId: string): void {
           : 0;
 
         room.participants.delete(socket.id);
+
+        // Set teacher not busy when removed after grace period
+        setUserBusy(odId, false);
 
         // Notify remaining participants
         io.to(callId).emit('user-left', {
