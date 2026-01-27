@@ -79,14 +79,26 @@ app.get('/api/admin/logs', verifyAdminToken, (req: AuthenticatedRequest, res) =>
   res.json({ logs });
 });
 
-app.get('/api/turn-credentials', verifyFirebaseToken, (req: AuthenticatedRequest, res) => {
-  const userId = req.user ? req.user.uid : `guest-${crypto.randomUUID()}`;
-  const iceConfig = getIceServerConfig(userId);
-  res.json(iceConfig);
+app.get('/api/turn-credentials', verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user ? req.user.uid : `guest-${crypto.randomUUID()}`;
+
+    const iceConfig = await getIceServerConfig(userId);
+
+    res.json(iceConfig);
+  } catch (error) {
+    console.error('Error getting TURN credentials:', error);
+    // Fallback to default config
+    const userId = req.user ? req.user.uid : `guest-${crypto.randomUUID()}`;
+    const iceConfig = getIceServerConfig(userId);
+    res.json(iceConfig);
+  }
 });
 
 app.post('/api/send-notification', verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
   const { token, topic, title, body, data } = req.body;
+
+  console.log('Send notification request:', { hasToken: !!token, hasTopic: !!topic, title, body, hasData: !!data });
 
   if ((!token && !topic) || !title || !body) {
     res.status(400).json({ error: 'Missing required fields: token or topic, title, body' });
@@ -103,7 +115,9 @@ app.post('/api/send-notification', verifyFirebaseToken, async (req: Authenticate
       ? { ...baseMessage, token }
       : { ...baseMessage, topic };
 
+    console.log('Sending FCM message:', { token: token ? '[REDACTED]' : undefined, topic, title, body });
     const response = await admin.messaging().send(message);
+    console.log('FCM message sent successfully:', response);
     res.json({ success: true, messageId: response });
   } catch (error) {
     console.error('Error sending notification:', error);

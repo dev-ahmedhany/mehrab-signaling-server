@@ -1,9 +1,7 @@
 import { Server, Socket } from 'socket.io';
 import admin from 'firebase-admin';
-import fs from 'fs';
-import path from 'path';
 import { verifySocketToken, verifyAdminSocketToken } from '../middleware/auth.middleware';
-import { getIceServerConfig } from '../services/turn-credential.service';
+import { getIceServerConfig, IceServerConfig } from '../services/turn-credential.service';
 import { getUsersInfo } from '../services/user.service';
 
 // WebRTC types (server just forwards these, doesn't process them)
@@ -23,13 +21,6 @@ interface RoomParticipant {
   socketId: string;
   odId: string;
   joinedAt: Date;
-  displayName?: string;
-}
-
-interface SerializedRoomParticipant {
-  socketId: string;
-  odId: string;
-  joinedAt: string;
   displayName?: string;
 }
 
@@ -70,61 +61,16 @@ export interface RoomInfo {
   participants: ParticipantInfo[];
 }
 
-const ROOMS_FILE = path.join(__dirname, '../../data/rooms.json');
-
-// Persistence functions
-function saveRooms(): void {
-  try {
-    const dataDir = path.dirname(ROOMS_FILE);
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-
-    const roomsData = Array.from(rooms.entries()).map(([callId, room]) => ({
-      callId,
-      participants: Array.from(room.participants.entries()),
-      createdAt: room.createdAt.toISOString(),
-      callConnectedAt: room.callConnectedAt?.toISOString(),
-    }));
-
-    fs.writeFileSync(ROOMS_FILE, JSON.stringify(roomsData, null, 2));
-  } catch (error) {
-    console.error('Failed to save rooms:', error);
-  }
-}
-
-function loadRooms(): void {
-  try {
-    if (fs.existsSync(ROOMS_FILE)) {
-      const data: Array<{
-        callId: string;
-        participants: [string, SerializedRoomParticipant][];
-        createdAt: string;
-        callConnectedAt?: string;
-      }> = JSON.parse(fs.readFileSync(ROOMS_FILE, 'utf-8'));
-      for (const roomData of data) {
-        const participants = new Map(
-          roomData.participants.map(([socketId, participant]) => [
-            socketId,
-            { ...participant, joinedAt: new Date(participant.joinedAt) } as RoomParticipant
-          ])
-        );
-        rooms.set(roomData.callId, {
-          participants,
-          createdAt: new Date(roomData.createdAt),
-          callConnectedAt: roomData.callConnectedAt ? new Date(roomData.callConnectedAt) : undefined,
-        });
-      }
-      console.log(`Loaded ${rooms.size} rooms from persistence`);
-    }
-  } catch (error) {
-    console.error('Failed to load rooms:', error);
-  }
-}
+// Note: Room persistence removed - clients now handle reconnection by remembering their room ID
+// and rejoining automatically. The grace period mechanism handles temporary disconnections.
 
 const rooms = new Map<string, RoomState>();
 const logs: LogEntry[] = [];
 const MAX_LOGS = 500;
+
+// Track pending disconnections for grace period
+const pendingDisconnections = new Map<string, NodeJS.Timeout>(); // odId -> timeout
+const DISCONNECT_GRACE_PERIOD = 15000; // 15 seconds grace period for reconnection
 
 // Store io instance for admin broadcasts
 let ioInstance: Server | null = null;
@@ -224,8 +170,6 @@ export async function getDetailedStats(): Promise<{
 }
 
 export function setupSocketHandlers(io: Server): void {
-  const serverStartTime = Date.now();
-  loadRooms();
   ioInstance = io;
 
   io.use(async (socket, next) => {
@@ -245,49 +189,6 @@ export function setupSocketHandlers(io: Server): void {
       userId,
       socketId: socket.id,
     });
-
-    // Auto-rejoin persisted rooms for authenticated users within first minute
-    if (Date.now() - serverStartTime < 60000 && userId && !userId.startsWith('guest-')) {
-      for (const [callId, room] of rooms.entries()) {
-        const existingParticipant = Array.from(room.participants.values()).find(p => p.odId === userId);
-        if (existingParticipant) {
-          // Update socket ID and rejoin
-          room.participants.delete(existingParticipant.socketId);
-          room.participants.set(socket.id, {
-            socketId: socket.id,
-            odId: userId,
-            joinedAt: new Date(),
-          });
-          saveRooms();
-
-          socket.join(callId);
-
-          const otherParticipants = Array.from(room.participants.values())
-            .filter(p => p.socketId !== socket.id)
-            .map(p => ({ odId: p.odId, socketId: p.socketId }));
-
-          socket.emit('room-joined', {
-            callId,
-            participants: otherParticipants,
-          });
-
-          socket.to(callId).emit('user-joined', {
-            odId: userId,
-            socketId: socket.id,
-          });
-
-          addLog({
-            type: 'info',
-            message: `User ${userId} auto-rejoined room ${callId} after server restart`,
-            roomId: callId,
-            userId,
-            socketId: socket.id,
-          });
-
-          break; // Assume user is only in one room
-        }
-      }
-    }
 
     socket.on('join-room', (data: { callId: string }) => {
       handleJoinRoom(io, socket, data.callId, userId);
@@ -329,9 +230,16 @@ export function setupSocketHandlers(io: Server): void {
       socket.emit('admin-stats', stats);
     });
 
-    socket.on('get-ice-config', (callback: (config: ReturnType<typeof getIceServerConfig>) => void) => {
-      const iceConfig = getIceServerConfig(userId);
-      callback(iceConfig);
+    socket.on('get-ice-config', async (callback: (config: IceServerConfig) => void) => {
+      try {
+        const iceConfig = await getIceServerConfig(userId);
+        callback(iceConfig);
+      } catch (error) {
+        console.error(`Error getting ICE config for ${userId}:`, error);
+        // Fallback to default config
+        const iceConfig = await getIceServerConfig(userId);
+        callback(iceConfig);
+      }
     });
 
     socket.on('disconnect', () => {
@@ -341,6 +249,20 @@ export function setupSocketHandlers(io: Server): void {
 }
 
 function handleJoinRoom(io: Server, socket: Socket, callId: string, odId: string): void {
+  // Cancel any pending disconnection for this user in this room
+  const disconnectKey = `${odId}:${callId}`;
+  if (pendingDisconnections.has(disconnectKey)) {
+    clearTimeout(pendingDisconnections.get(disconnectKey));
+    pendingDisconnections.delete(disconnectKey);
+    addLog({
+      type: 'info',
+      message: `Cancelled pending disconnection for user ${odId} in room ${callId}`,
+      roomId: callId,
+      userId: odId,
+      socketId: socket.id,
+    });
+  }
+
   let room = rooms.get(callId);
 
   if (!room) {
@@ -349,7 +271,6 @@ function handleJoinRoom(io: Server, socket: Socket, callId: string, odId: string
       createdAt: new Date(),
     };
     rooms.set(callId, room);
-    saveRooms();
 
     addLog({
       type: 'call',
@@ -376,12 +297,10 @@ function handleJoinRoom(io: Server, socket: Socket, callId: string, odId: string
     odId,
     joinedAt: new Date(),
   });
-  saveRooms();
 
   // Mark call as connected when second participant joins
   if (room.participants.size === 2 && !room.callConnectedAt) {
     room.callConnectedAt = new Date();
-    saveRooms();
     addLog({
       type: 'call',
       message: `Call connected in room ${callId}`,
@@ -456,6 +375,13 @@ function handleVideoState(socket: Socket, data: { enabled: boolean; to: string }
 }
 
 function handleLeaveRoom(io: Server, socket: Socket, callId: string, odId: string): void {
+  // Clear any pending disconnection since user is explicitly leaving
+  const disconnectKey = `${odId}:${callId}`;
+  if (pendingDisconnections.has(disconnectKey)) {
+    clearTimeout(pendingDisconnections.get(disconnectKey));
+    pendingDisconnections.delete(disconnectKey);
+  }
+
   const room = rooms.get(callId);
   if (room) {
     const participant = room.participants.get(socket.id);
@@ -464,7 +390,6 @@ function handleLeaveRoom(io: Server, socket: Socket, callId: string, odId: strin
       : 0;
 
     room.participants.delete(socket.id);
-    saveRooms();
     socket.leave(callId);
 
     socket.to(callId).emit('user-left', {
@@ -483,7 +408,6 @@ function handleLeaveRoom(io: Server, socket: Socket, callId: string, odId: strin
     if (room.participants.size === 0) {
       const roomDuration = Math.floor((new Date().getTime() - room.createdAt.getTime()) / 1000);
       rooms.delete(callId);
-      saveRooms();
 
       addLog({
         type: 'call',
@@ -497,45 +421,83 @@ function handleLeaveRoom(io: Server, socket: Socket, callId: string, odId: strin
 function handleDisconnect(io: Server, socket: Socket, odId: string): void {
   addLog({
     type: 'connection',
-    message: `User ${odId} disconnected`,
+    message: `User ${odId} disconnected, starting grace period`,
     userId: odId,
     socketId: socket.id,
   });
 
+  // Find the room this user was in
   for (const [callId, room] of rooms.entries()) {
     if (room.participants.has(socket.id)) {
       const participant = room.participants.get(socket.id);
-      const duration = participant
-        ? Math.floor((new Date().getTime() - participant.joinedAt.getTime()) / 1000)
-        : 0;
 
-      room.participants.delete(socket.id);
-      saveRooms();
+      // Store the disconnect info for grace period
+      const disconnectKey = `${odId}:${callId}`;
 
-      socket.to(callId).emit('user-left', {
-        odId,
-        socketId: socket.id,
-      });
+      // Clear any existing pending disconnection for this user
+      if (pendingDisconnections.has(disconnectKey)) {
+        clearTimeout(pendingDisconnections.get(disconnectKey));
+      }
+
+      // Set a grace period before actually removing the user
+      const timeout = setTimeout(() => {
+        pendingDisconnections.delete(disconnectKey);
+
+        // Check if user has reconnected (socket ID would be different)
+        const currentParticipant = Array.from(room.participants.values()).find(p => p.odId === odId);
+        if (currentParticipant && currentParticipant.socketId !== socket.id) {
+          // User has reconnected with a new socket, don't remove them
+          addLog({
+            type: 'info',
+            message: `User ${odId} reconnected to room ${callId} within grace period`,
+            roomId: callId,
+            userId: odId,
+          });
+          return;
+        }
+
+        // User didn't reconnect, remove them from the room
+        const duration = participant
+          ? Math.floor((new Date().getTime() - participant.joinedAt.getTime()) / 1000)
+          : 0;
+
+        room.participants.delete(socket.id);
+
+        // Notify remaining participants
+        io.to(callId).emit('user-left', {
+          odId,
+          socketId: socket.id,
+        });
+
+        addLog({
+          type: 'warning',
+          message: `User ${odId} removed from room ${callId} after grace period (${duration}s in call)`,
+          roomId: callId,
+          userId: odId,
+          socketId: socket.id,
+        });
+
+        if (room.participants.size === 0) {
+          const roomDuration = Math.floor((new Date().getTime() - room.createdAt.getTime()) / 1000);
+          rooms.delete(callId);
+
+          addLog({
+            type: 'call',
+            message: `Call ended in room ${callId} due to disconnect (duration: ${roomDuration}s)`,
+            roomId: callId,
+          });
+        }
+      }, DISCONNECT_GRACE_PERIOD);
+
+      pendingDisconnections.set(disconnectKey, timeout);
 
       addLog({
-        type: 'warning',
-        message: `User ${odId} disconnected from room ${callId} after ${duration}s`,
+        type: 'info',
+        message: `Grace period started for user ${odId} in room ${callId} (${DISCONNECT_GRACE_PERIOD / 1000}s)`,
         roomId: callId,
         userId: odId,
         socketId: socket.id,
       });
-
-      if (room.participants.size === 0) {
-        const roomDuration = Math.floor((new Date().getTime() - room.createdAt.getTime()) / 1000);
-        rooms.delete(callId);
-        saveRooms();
-
-        addLog({
-          type: 'call',
-          message: `Call ended in room ${callId} due to disconnect (duration: ${roomDuration}s)`,
-          roomId: callId,
-        });
-      }
     }
   }
 }
