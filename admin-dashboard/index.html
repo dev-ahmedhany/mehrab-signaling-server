@@ -731,7 +731,7 @@
                   <span class="participant-name" title="${p.displayName}">${p.displayName || 'Unknown'}</span>
                   <span class="participant-time">In call: ${formatDuration(p.duration)}</span>
                   ${p.deviceModel ? `<span class="participant-device">📱 ${p.deviceModel}${p.deviceVersion ? ` (${p.deviceVersion})` : ''}</span>` : ''}
-                  ${p.countryCode && p.phoneNumber ? `<span class="participant-phone">📞 ${p.countryCode}${p.countryCodeNumber ? `+${p.countryCodeNumber} ` : ' '}${p.phoneNumber}</span>` : ''}
+                  ${p.countryCode && p.phoneNumber ? `<span class="participant-phone">📞 ${p.countryCode} ${p.countryCodeNumber ? `${p.countryCodeNumber} ` : ' '}${p.phoneNumber}</span>` : ''}
                 </div>
               </div>
             `).join('')}
