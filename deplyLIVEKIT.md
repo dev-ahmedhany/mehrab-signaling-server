@@ -82,7 +82,8 @@ turn:
   udp_port: 3478
 
 # API Keys for your backend to use.
-# IMPORTANT: Replace these with your own secure, randomly generated values.
+# IMPORTANT: Replace these with your own secure, randomly generated values. 
+# openssl rand -hex 32
 keys:
   LK_API_KEY_HERE: 'LK_API_SECRET_HERE'
 ```
@@ -206,7 +207,7 @@ Answer `y` when prompted to proceed.
 You are in your `livekit-server-simple` directory with all three files created. Launch everything with one command:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 **Step 8: Test Your Self-Contained Server**
