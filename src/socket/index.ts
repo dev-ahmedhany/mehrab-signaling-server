@@ -53,6 +53,23 @@ export interface ParticipantInfo {
   countryCodeNumber?: string;
 }
 
+// Helper to set user online status
+async function setUserOnline(uid: string, online: boolean): Promise<void> {
+  if (uid.startsWith('guest-')) return; // Skip guests
+
+  try {
+    const userDocRef = admin.firestore().collection('users').doc(uid);
+    await userDocRef.update({ isOnline: online, lastSeen: new Date() });
+    addLog({
+      type: 'info',
+      message: `Set user ${uid} online: ${online}`,
+      userId: uid,
+    });
+  } catch (error) {
+    console.error(`Error setting online status for ${uid}:`, error);
+  }
+}
+
 // Helper to set user busy status if they are a teacher
 async function setUserBusy(uid: string, busy: boolean): Promise<void> {
   if (uid.startsWith('guest-')) return; // Skip guests
@@ -204,6 +221,8 @@ export function setupSocketHandlers(io: Server): void {
     const user = socket.data.user as admin.auth.DecodedIdToken | null;
     const userId = user ? user.uid : `guest-${socket.id}`;
 
+    setUserOnline(userId, true);
+
     addLog({
       type: 'connection',
       message: `User connected: ${userId}`,
@@ -264,6 +283,7 @@ export function setupSocketHandlers(io: Server): void {
     });
 
     socket.on('disconnect', () => {
+      setUserOnline(userId, false);
       handleDisconnect(io, socket, userId);
     });
   });

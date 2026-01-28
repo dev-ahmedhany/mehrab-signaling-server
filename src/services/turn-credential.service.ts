@@ -1,13 +1,3 @@
-import crypto from 'crypto';
-import { config } from '../config';
-
-export interface TurnCredentials {
-  username: string;
-  credential: string;
-  ttl: number;
-  uris: string[];
-}
-
 export interface IceServerConfig {
   iceServers: Array<{
     urls: string | string[];
@@ -19,30 +9,6 @@ export interface IceServerConfig {
 
 // Cache for Cloudflare ICE servers (valid for 3 hours)
 let cloudflareCache: { servers: IceServerConfig['iceServers']; expiresAt: number } | null = null;
-
-export function generateTurnCredentials(userId: string): TurnCredentials {
-  const ttl = config.turn.credentialTTL;
-  const timestamp = Math.floor(Date.now() / 1000) + ttl;
-  const username = `${timestamp}:${userId}`;
-
-  const hmac = crypto.createHmac('sha1', config.turn.secret);
-  hmac.update(username);
-  const credential = hmac.digest('base64');
-
-  const domain = config.turn.domain;
-
-  return {
-    username,
-    credential,
-    ttl,
-    uris: [
-      `stun:${domain}:3478`,
-      `turn:${domain}:3478?transport=udp`,
-      `turn:${domain}:80?transport=tcp`,
-      `turns:${domain}:443?transport=tcp`,
-    ],
-  };
-}
 
 /**
  * Fetch Cloudflare ICE servers.
@@ -95,16 +61,13 @@ async function getCloudflareIceServers(): Promise<IceServerConfig['iceServers'] 
 }
 
 /**
- * Get ICE server config using both turn.ahmedhany.dev (faster) and Cloudflare (fallback).
+ * Get ICE server config using Cloudflare TURN servers only.
  *
  * @param userId - User ID for credential generation
- * @returns ICE configuration with multiple TURN servers
+ * @returns ICE configuration with STUN and Cloudflare TURN servers
  */
 export async function getIceServerConfig(userId: string): Promise<IceServerConfig> {
-  const turnCredentials = generateTurnCredentials(userId);
-  const domain = config.turn.domain;
-
-  // Start with STUN and our own TURN server (faster)
+  // Start with STUN for P2P discovery
   const iceServers: IceServerConfig['iceServers'] = [
     // STUN for P2P discovery
     {
@@ -113,26 +76,15 @@ export async function getIceServerConfig(userId: string): Promise<IceServerConfi
         'stun:stun1.l.google.com:19302',
       ],
     },
-    // Our own TURN server - prioritized first (faster connection)
-    {
-      urls: `turn:${domain}:80?transport=tcp`,
-      username: turnCredentials.username,
-      credential: turnCredentials.credential,
-    },
-    {
-      urls: `turns:${domain}:443?transport=tcp`,
-      username: turnCredentials.username,
-      credential: turnCredentials.credential,
-    },
   ];
 
-  // Add Cloudflare as fallback
+  // Add Cloudflare TURN servers
   const cloudflareServers = await getCloudflareIceServers();
   if (cloudflareServers) {
     iceServers.push(...cloudflareServers);
-    console.log(`[TURN] Using ${domain} + Cloudflare for user ${userId}`);
+    console.log(`[TURN] Using Cloudflare TURN servers for user ${userId}`);
   } else {
-    console.log(`[TURN] Using ${domain} only for user ${userId}`);
+    console.log(`[TURN] No Cloudflare TURN servers available for user ${userId}`);
   }
 
   return {

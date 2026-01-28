@@ -21,6 +21,11 @@ export const config = {
   cors: {
     origin: process.env.CORS_ORIGIN || '*',
   },
+
+  livekit: {
+    apiKey: process.env.LIVEKIT_API_KEY || '',
+    apiSecret: process.env.LIVEKIT_API_SECRET || '',
+  },
 };
 
 export function validateConfig(): void {
@@ -29,6 +34,8 @@ export function validateConfig(): void {
     'FIREBASE_CLIENT_EMAIL',
     'FIREBASE_PRIVATE_KEY',
     'TURN_SECRET',
+    'LIVEKIT_API_KEY',
+    'LIVEKIT_API_SECRET',
   ];
 
   const missing = requiredEnvVars.filter(key => !process.env[key]);

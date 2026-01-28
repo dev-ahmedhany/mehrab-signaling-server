@@ -10,6 +10,7 @@ import { config, validateConfig } from './config';
 import { verifyFirebaseToken, verifyAdminToken, AuthenticatedRequest } from './middleware/auth.middleware';
 import { getIceServerConfig } from './services/turn-credential.service';
 import { setupSocketHandlers, getRoomStats, getDetailedStats, getActiveRooms, getLogs } from './socket';
+import livekitRouter from './routes/livekit';
 
 validateConfig();
 
@@ -78,6 +79,8 @@ app.get('/api/admin/logs', verifyAdminToken, (req: AuthenticatedRequest, res) =>
   const logs = getLogs(limit);
   res.json({ logs });
 });
+
+app.use('/api/livekit', livekitRouter);
 
 app.get('/api/turn-credentials', verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
   try {
