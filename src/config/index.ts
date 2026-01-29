@@ -25,6 +25,13 @@ export const config = {
   livekit: {
     apiKey: process.env.LIVEKIT_API_KEY || '',
     apiSecret: process.env.LIVEKIT_API_SECRET || '',
+    host: process.env.LIVEKIT_HOST || '',
+    r2: {
+      accessKey: process.env.LIVEKIT_R2_ACCESS_KEY || '',
+      secretKey: process.env.LIVEKIT_R2_SECRET_KEY || '',
+      bucket: process.env.LIVEKIT_R2_BUCKET || '',
+      endpoint: process.env.LIVEKIT_R2_ENDPOINT || '',
+    },
   },
 };
 
@@ -36,6 +43,11 @@ export function validateConfig(): void {
     'TURN_SECRET',
     'LIVEKIT_API_KEY',
     'LIVEKIT_API_SECRET',
+    'LIVEKIT_HOST',
+    'LIVEKIT_R2_ACCESS_KEY',
+    'LIVEKIT_R2_SECRET_KEY',
+    'LIVEKIT_R2_BUCKET',
+    'LIVEKIT_R2_ENDPOINT',
   ];
 
   const missing = requiredEnvVars.filter(key => !process.env[key]);
