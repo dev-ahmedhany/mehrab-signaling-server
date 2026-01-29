@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { AccessToken, EgressClient, EncodedFileOutput, S3Upload } from 'livekit-server-sdk';
+import { AccessToken, EgressClient, EncodedFileOutput, S3Upload, RoomServiceClient } from 'livekit-server-sdk';
 import { verifyFirebaseToken, AuthenticatedRequest } from '../middleware/auth.middleware';
 import { config } from '../config';
 import admin from 'firebase-admin';
@@ -39,6 +39,9 @@ router.post('/token', verifyFirebaseToken, async (req: AuthenticatedRequest, res
 
   // Start recording if not already started
   try {
+    const roomService = new RoomServiceClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
+    await roomService.createRoom({ name: roomName });
+    
     const egressClient = new EgressClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
     const egresses = await egressClient.listEgress({ roomName });
     if (egresses.length === 0) {
@@ -50,7 +53,7 @@ router.post('/token', verifyFirebaseToken, async (req: AuthenticatedRequest, res
         endpoint: config.livekit.r2.endpoint,
       });
       const output = new EncodedFileOutput({
-        filepath: `recordings/${roomName}.mp4`,
+        filepath: `recordings/${roomName}-${Date.now()}.mp4`,
         output: { case: 's3', value: s3Upload },
       });
       await egressClient.startRoomCompositeEgress(roomName, output);
