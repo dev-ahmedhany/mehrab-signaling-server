@@ -108,6 +108,18 @@ app.post('/api/send-notification', verifyFirebaseToken, async (req: Authenticate
     return;
   }
 
+  // Check if teacher is already busy (in a call)
+  try {
+    const teacherDoc = await admin.firestore().collection('users').doc(topic).get();
+    if (teacherDoc.exists && teacherDoc.data()?.isBusy) {
+      console.log(`Teacher ${topic} is already in a call, rejecting notification`);
+      return res.status(409).json({ error: 'Teacher is already in a call' });
+    }
+  } catch (error) {
+    console.error(`Error checking teacher status for ${topic}:`, error);
+    // Continue with sending notification despite error
+  }
+
   try {
     const baseMessage = {
       notification: { title, body },
