@@ -83,6 +83,11 @@ const stopMutex = new Mutex(); // Mutex for stopping recordings to prevent races
 router.post('/token', tokenLimiter, verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
   const { roomName, participantName } = req.body;
   const user = req.user;
+  const userAgent = req.get('User-Agent') || 'Unknown';
+  const clientType = userAgent.includes('Dart') ? 'Flutter App' : 
+                     userAgent.includes('Mozilla') ? 'Web Browser' : 'Unknown';
+
+  logger.info(`Token request from ${clientType} (User-Agent: ${userAgent.substring(0, 100)}), user: ${user?.uid || 'unauthenticated'}, room: ${roomName}`);
 
   // Validate input
   if (!roomName || typeof roomName !== 'string' || roomName.length > 100 || !/^[a-zA-Z0-9_-]+$/.test(roomName)) {

@@ -84,6 +84,13 @@ app.get('/api/admin/logs', verifyAdminToken, (req: AuthenticatedRequest, res) =>
 app.use('/api/livekit', livekitRouter);
 
 app.get('/api/turn-credentials', verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
+  const user = req.user;
+  const userAgent = req.get('User-Agent') || 'Unknown';
+  const clientType = userAgent.includes('Dart') ? 'Flutter App' : 
+                     userAgent.includes('Mozilla') ? 'Web Browser' : 'Unknown';
+
+  console.log(`TURN credentials request from ${clientType} (User-Agent: ${userAgent.substring(0, 100)}), user: ${user?.uid || 'unauthenticated'}`);
+
   try {
     const userId = req.user ? req.user.uid : `guest-${crypto.randomUUID()}`;
 
@@ -101,8 +108,12 @@ app.get('/api/turn-credentials', verifyFirebaseToken, async (req: AuthenticatedR
 
 app.post('/api/send-notification', verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
   const { token, topic, title, body, data } = req.body;
+  const user = req.user;
+  const userAgent = req.get('User-Agent') || 'Unknown';
+  const clientType = userAgent.includes('Dart') ? 'Flutter App' : 
+                     userAgent.includes('Mozilla') ? 'Web Browser' : 'Unknown';
 
-  console.log('Send notification request:', { hasToken: !!token, hasTopic: !!topic, title, body, hasData: !!data });
+  console.log(`Send notification request from ${clientType} (User-Agent: ${userAgent.substring(0, 100)}), user: ${user?.uid || 'unauthenticated'}, topic: ${topic}`, { hasToken: !!token, hasTopic: !!topic, title, body, hasData: !!data });
 
   if (!topic || !title || !body) {
     res.status(400).json({ error: 'Missing required fields: topic, title, body' });
