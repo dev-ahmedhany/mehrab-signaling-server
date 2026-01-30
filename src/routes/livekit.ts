@@ -79,6 +79,7 @@ const activeRecordings = new Map<string, { egressId: string, startTime: Date }>(
 const processingRooms = new Set<string>();
 const mutex = new Mutex();
 const stopMutex = new Mutex(); // Mutex for stopping recordings to prevent races
+const participantJoins = new Map<string, number>(); // Track participant joins per room
 
 router.post('/token', tokenLimiter, verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
   const { roomName, participantName } = req.body;
@@ -154,6 +155,9 @@ async function handleParticipantJoined(event: WebhookEvent) {
   const room = event.room;
   logger.info(`Participant ${event.participant?.identity} joined room ${room.name}`);
 
+  const currentJoins = participantJoins.get(room.name) || 0;
+  participantJoins.set(room.name, currentJoins + 1);
+
   await mutex.runExclusive(async () => {
     if (processingRooms.has(room.name)) {
       logger.info(`Recording already being started for room ${room.name}`);
@@ -162,7 +166,7 @@ async function handleParticipantJoined(event: WebhookEvent) {
     processingRooms.add(room.name);
 
     try {
-      if (room.numParticipants >= 2 && !activeRecordings.has(room.name)) {
+      if (participantJoins.get(room.name)! >= 2 && !activeRecordings.has(room.name)) {
         const egressClient = new EgressClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
         const egresses = await egressClient.listEgress({ roomName: room.name });
 
@@ -185,12 +189,12 @@ async function handleParticipantJoined(event: WebhookEvent) {
             startTime: new Date(),
           });
 
-          logger.info(`Started recording ${egressResponse.egressId} for room ${room.name} via webhook (participants: ${room.numParticipants})`);
+          logger.info(`Started recording ${egressResponse.egressId} for room ${room.name} via webhook (joins: ${participantJoins.get(room.name)})`);
         } else {
           logger.info(`Egress already exists for room ${room.name}`);
         }
       } else {
-        logger.info(`Not starting recording for room ${room.name}: participants=${room.numParticipants}, recording active=${activeRecordings.has(room.name)}`);
+        logger.info(`Not starting recording for room ${room.name}: joins=${participantJoins.get(room.name)}, recording active=${activeRecordings.has(room.name)}`);
       }
     } catch (error) {
       logger.error(`Error starting recording for room ${room.name}:`, error);
@@ -204,6 +208,12 @@ async function handleParticipantLeft(event: WebhookEvent) {
   if (!event.room) return;
   const room = event.room;
   logger.info(`Participant ${event.participant?.identity} left room ${room.name}`);
+
+  // Decrement join count
+  const currentJoins = participantJoins.get(room.name) || 0;
+  if (currentJoins > 0) {
+    participantJoins.set(room.name, currentJoins - 1);
+  }
 
   // Update user status to not busy
   if (event.participant?.identity) {
@@ -245,6 +255,9 @@ async function handleRoomFinished(event: WebhookEvent) {
   if (!event.room) return;
   const room = event.room;
   logger.info(`Room ${room.name} finished`);
+
+  // Clean up
+  participantJoins.delete(room.name);
 
   await stopMutex.runExclusive(async () => {
     const recording = activeRecordings.get(room.name);
@@ -289,7 +302,6 @@ router.post('/webhook', webhookLimiter, express.raw({ type: 'application/webhook
     // Validate the webhook signature
     const event: WebhookEvent = await webhookReceiver.receive(req.body.toString(), authHeader);
     logger.info(`Received webhook event: ${event.event} for room: ${event.room?.name || 'unknown'}`);
-    logger.info(`Full event: ${JSON.stringify(event)}`);
 
     switch (event.event) {
     case 'room_started':
