@@ -136,7 +136,7 @@ router.post('/token', tokenLimiter, verifyFirebaseToken, async (req: Authenticat
       // Continue without failing the request
     }
 
-    res.json({ token });
+    res.json({ token, host: config.livekit.host });
   } catch (error) {
     logger.error('Error generating token:', error);
     res.status(500).json({ error: 'Failed to generate token' });
