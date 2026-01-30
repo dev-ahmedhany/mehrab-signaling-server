@@ -440,7 +440,7 @@ router.get('/recordings', verifyAdminToken, async (req: AuthenticatedRequest, re
 
       // Now, process audio files
       for (const obj of listResponse.Contents) {
-        if (obj.Key) {
+        if (obj.Key && !obj.Key.endsWith('.json')) {
           console.log('Processing recording:', obj.Key);
           const recording = recordingMap.get(obj.Key);
           const url = recording?.location || 'N/A';
