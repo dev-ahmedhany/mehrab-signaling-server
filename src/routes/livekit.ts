@@ -385,27 +385,35 @@ router.get('/recordings', verifyFirebaseToken, async (req: AuthenticatedRequest,
   
 
   try {
+    console.log('Fetching recordings for user:', user.email);
+    console.log('Bucket:', config.livekit.r2.bucket);
+    console.log('Endpoint:', `https://${config.livekit.r2.endpoint}`);
     if (user.email !== 'dev.ahmedhany@gmail.com' || !user.email_verified) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
     // List objects in recordings/
+    console.log('Listing objects with prefix: recordings/');
     const listCommand = new ListObjectsV2Command({
       Bucket: config.livekit.r2.bucket,
       Prefix: 'recordings/',
     });
 
     const listResponse = await s3Client.send(listCommand);
+    console.log('List response received, contents length:', listResponse.Contents?.length || 0);
     const recordings = [];
 
     if (listResponse.Contents) {
       for (const obj of listResponse.Contents) {
+        console.log('Found object key:', obj.Key);
         if (obj.Key && (obj.Key.endsWith('.acc') || obj.Key.endsWith('.m4a'))) {
+          console.log('Processing recording:', obj.Key);
           const getCommand = new GetObjectCommand({
             Bucket: config.livekit.r2.bucket,
             Key: obj.Key,
           });
           const signedUrl = await getSignedUrl(s3Client, getCommand, { expiresIn: 3600 }); // 1 hour
+          console.log('Generated signed URL for:', obj.Key);
 
           // Parse key to get date and room
           const parts = obj.Key.split('/');
@@ -425,15 +433,21 @@ router.get('/recordings', verifyFirebaseToken, async (req: AuthenticatedRequest,
               roomName,
             });
           }
+        } else {
+          console.log('Skipping object:', obj.Key);
         }
       }
+    } else {
+      console.log('No contents in list response');
     }
 
+    console.log('Total recordings processed:', recordings.length);
     // Sort by date desc
     recordings.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     res.json({ recordings });
   } catch (error) {
+    console.error('Error fetching recordings:', error);
     logger.error('Error fetching recordings:', error);
     res.status(500).json({ error: 'Failed to fetch recordings' });
   }
