@@ -179,12 +179,15 @@ async function handleParticipantJoined(event: WebhookEvent) {
             bucket: config.livekit.r2.bucket,
             endpoint: config.livekit.r2.endpoint,
           });
+          const now = new Date();
+          const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+          const timeStr = now.toISOString().slice(11, 19).replace(/:/g, '');
           const output = new EncodedFileOutput({
-            filepath: `recordings/${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${room.name}}.mp4`,
+            filepath: `recordings/${dateStr}-${timeStr}-${room.name}.ogg`,
             output: { case: 's3', value: s3Upload },
           });
 
-          const egressResponse = await egressClient.startRoomCompositeEgress(room.name, output);
+          const egressResponse = await egressClient.startRoomCompositeEgress(room.name, output, { audioOnly: true });
 
           activeRecordings.set(room.name, {
             egressId: egressResponse.egressId,
