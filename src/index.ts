@@ -28,7 +28,7 @@ if (config.firebase.projectId && config.firebase.clientEmail && config.firebase.
 }
 
 const app = express();
-app.set('trust proxy', true);
+app.set('trust proxy', 1); // Trust first proxy
 const httpServer = createServer(app);
 
 const io = new Server(httpServer, {

@@ -20,7 +20,13 @@ export async function verifyFirebaseToken(
 ): Promise<void> {
   const authHeader = req.headers.authorization;
 
+  console.log('Auth header present:', !!authHeader);
+  if (authHeader) {
+    console.log('Auth header starts with Bearer:', authHeader.startsWith('Bearer '));
+  }
+
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.log('No valid auth header, allowing as guest');
     // Temporarily allow non-auth requests
     req.user = null;
     next();
@@ -29,7 +35,9 @@ export async function verifyFirebaseToken(
 
   const token = authHeader.split('Bearer ')[1];
 
+  console.log('Token extracted, length:', token ? token.length : 0);
   if (!token) {
+    console.log('Token is empty, allowing as guest');
     // Invalid token format
     req.user = null;
     next();
@@ -38,10 +46,12 @@ export async function verifyFirebaseToken(
 
   try {
     const decodedToken = await admin.auth().verifyIdToken(token);
+    console.log('Token verified successfully for user:', decodedToken.uid);
     req.user = decodedToken;
     next();
   } catch (error) {
     console.error('Token verification failed:', error);
+    console.log('Failed token (first 50 chars):', token.substring(0, 50));
     // Temporarily allow even on error
     req.user = null;
     next();
