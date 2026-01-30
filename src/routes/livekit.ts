@@ -8,7 +8,6 @@ import { Mutex } from 'async-mutex';
 import winston from 'winston';
 import rateLimit from 'express-rate-limit';
 import { S3Client, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 // Define types for webhook events to replace 'any'
 interface Room {
@@ -404,16 +403,45 @@ router.get('/recordings', verifyFirebaseToken, async (req: AuthenticatedRequest,
     const recordings = [];
 
     if (listResponse.Contents) {
+      // First, collect JSON files
+      const jsonFiles = listResponse.Contents.filter(obj => obj.Key && obj.Key.endsWith('.json'));
+      const recordingMap = new Map<string, any>();
+
+      // Fetch and parse JSON files
+      for (const obj of jsonFiles) {
+        if (obj.Key) {
+          console.log('Fetching JSON:', obj.Key);
+          try {
+            const getCommand = new GetObjectCommand({
+              Bucket: config.livekit.r2.bucket,
+              Key: obj.Key,
+            });
+            const response = await s3Client.send(getCommand);
+            const body = await response.Body?.transformToString();
+            if (body) {
+              const data = JSON.parse(body);
+              if (data.files && data.files.length > 0) {
+                const filename = data.files[0].filename;
+                let location = data.files[0].location;
+                // Replace with custom domain if present
+                if (location && location.includes('r2.cloudflarestorage.com')) {
+                  location = location.replace(/https:\/\/[^\/]+\.r2\.cloudflarestorage\.com/, 'https://r2.mehrab-alquran.com');
+                }
+                recordingMap.set(filename, { location, data });
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching JSON:', obj.Key, error);
+          }
+        }
+      }
+
+      // Now, process audio files
       for (const obj of listResponse.Contents) {
-        console.log('Found object key:', obj.Key);
-        if (obj.Key && obj.Key.includes('.m4a') && !obj.Key.endsWith('.json')) {
+        if (obj.Key && obj.Key.includes('.m4a')) {
           console.log('Processing recording:', obj.Key);
-          const getCommand = new GetObjectCommand({
-            Bucket: config.livekit.r2.bucket,
-            Key: obj.Key,
-          });
-          const signedUrl = await getSignedUrl(s3Client, getCommand, { expiresIn: 3600 }); // 1 hour
-          console.log('Generated signed URL for:', obj.Key);
+          const recording = recordingMap.get(obj.Key);
+          const url = recording?.location || 'N/A';
 
           // Parse key to get date and room
           const parts = obj.Key.split('/');
@@ -426,15 +454,13 @@ router.get('/recordings', verifyFirebaseToken, async (req: AuthenticatedRequest,
 
             recordings.push({
               key: obj.Key,
-              url: signedUrl,
+              url: url,
               lastModified: obj.LastModified,
               size: obj.Size,
               date: date.toISOString(),
               roomName,
             });
           }
-        } else {
-          console.log('Skipping object:', obj.Key);
         }
       }
     } else {
