@@ -79,7 +79,8 @@ const webhookReceiver = new WebhookReceiver(config.livekit.apiKey, config.liveki
 // Initialize S3 client for R2
 const s3Client = new S3Client({
   region: 'auto',
-  endpoint: config.livekit.r2.endpoint,
+  endpoint: `https://${config.livekit.r2.endpoint}`,
+  forcePathStyle: true,
   credentials: {
     accessKeyId: config.livekit.r2.accessKey,
     secretAccessKey: config.livekit.r2.secretKey,
