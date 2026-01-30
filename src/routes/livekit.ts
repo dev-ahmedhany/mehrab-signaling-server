@@ -392,7 +392,7 @@ router.get('/recordings', verifyAdminToken, async (req: AuthenticatedRequest, re
   
 
   try {
-    console.log('Fetching recordings for user:', user.email);
+    console.log('Fetching recordings for user:', user?.email || 'unknown');
     console.log('Bucket:', config.livekit.r2.bucket);
     console.log('Endpoint:', `https://${config.livekit.r2.endpoint}`);
 
