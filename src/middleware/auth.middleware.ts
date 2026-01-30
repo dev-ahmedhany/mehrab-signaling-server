@@ -29,6 +29,13 @@ export async function verifyFirebaseToken(
 
   const token = authHeader.split('Bearer ')[1];
 
+  if (!token) {
+    // Invalid token format
+    req.user = null;
+    next();
+    return;
+  }
+
   try {
     const decodedToken = await admin.auth().verifyIdToken(token);
     req.user = decodedToken;
