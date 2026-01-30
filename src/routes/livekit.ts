@@ -162,11 +162,7 @@ async function handleParticipantJoined(event: WebhookEvent) {
     processingRooms.add(room.name);
 
     try {
-      const roomService = new RoomServiceClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
-      const rooms = await roomService.listRooms([room.name]);
-      const currentRoom = rooms.length > 0 ? rooms[0] : null;
-
-      if (currentRoom && currentRoom.numParticipants >= 2 && !activeRecordings.has(room.name)) {
+      if (room.numParticipants >= 2 && !activeRecordings.has(room.name)) {
         const egressClient = new EgressClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
         const egresses = await egressClient.listEgress({ roomName: room.name });
 
@@ -189,12 +185,12 @@ async function handleParticipantJoined(event: WebhookEvent) {
             startTime: new Date(),
           });
 
-          logger.info(`Started recording ${egressResponse.egressId} for room ${room.name} via webhook (participants: ${currentRoom.numParticipants})`);
+          logger.info(`Started recording ${egressResponse.egressId} for room ${room.name} via webhook (participants: ${room.numParticipants})`);
         } else {
           logger.info(`Egress already exists for room ${room.name}`);
         }
       } else {
-        logger.info(`Not starting recording for room ${room.name}: participants=${currentRoom?.numParticipants || 0}, recording active=${activeRecordings.has(room.name)}`);
+        logger.info(`Not starting recording for room ${room.name}: participants=${room.numParticipants}, recording active=${activeRecordings.has(room.name)}`);
       }
     } catch (error) {
       logger.error(`Error starting recording for room ${room.name}:`, error);
