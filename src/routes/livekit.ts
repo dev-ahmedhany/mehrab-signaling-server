@@ -200,7 +200,7 @@ async function handleParticipantJoined(event: WebhookEvent) {
           const revDateStr = (99999999 - dateNum).toString().padStart(8, '0');
           const revTimeStr = (999999 - timeNum).toString().padStart(6, '0');
           const output = new EncodedFileOutput({
-            filepath: `recordings/${revDateStr}/${revTimeStr}-${room.name}.m4a`,
+            filepath: `recordings/${revDateStr}/${revTimeStr}-${room.name}.acc`,
             output: { case: 's3', value: s3Upload },
           });
 
