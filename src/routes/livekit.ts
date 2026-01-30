@@ -201,7 +201,7 @@ async function handleParticipantJoined(event: WebhookEvent) {
           const revDateStr = (99999999 - dateNum).toString().padStart(8, '0');
           const revTimeStr = (999999 - timeNum).toString().padStart(6, '0');
           const output = new EncodedFileOutput({
-            filepath: `recordings/${revDateStr}/${revTimeStr}-${room.name}.acc`,
+            filepath: `recordings/${revDateStr}/${revTimeStr}-${room.name}.m4a`,
             output: { case: 's3', value: s3Upload },
           });
 
@@ -406,7 +406,7 @@ router.get('/recordings', verifyFirebaseToken, async (req: AuthenticatedRequest,
     if (listResponse.Contents) {
       for (const obj of listResponse.Contents) {
         console.log('Found object key:', obj.Key);
-        if (obj.Key && (obj.Key.endsWith('.acc') || obj.Key.endsWith('.m4a'))) {
+        if (obj.Key && obj.Key.includes('.m4a') && !obj.Key.endsWith('.json')) {
           console.log('Processing recording:', obj.Key);
           const getCommand = new GetObjectCommand({
             Bucket: config.livekit.r2.bucket,
@@ -422,7 +422,7 @@ router.get('/recordings', verifyFirebaseToken, async (req: AuthenticatedRequest,
             const filename = parts[2];
             const dateNum = 99999999 - parseInt(revDateStr);
             const date = new Date(dateNum / 10000, (dateNum % 10000) / 100 - 1, dateNum % 100);
-            const roomName = filename.split('-').slice(1).join('-').replace('.acc', '').replace('.m4a', '');
+            const roomName = filename.split('-').slice(1).join('-').replace('.acc', '').replace('.m4a', '').replace('.ogg', '');
 
             recordings.push({
               key: obj.Key,
