@@ -487,4 +487,58 @@ router.get('/recordings', verifyFirebaseToken, async (req: AuthenticatedRequest,
   }
 });
 
+// Admin endpoints for managing egress sessions
+router.get('/admin/egress', verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
+  const user = req.user;
+  if (!user || user.email !== 'dev.ahmedhany@gmail.com' || !user.email_verified) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  try {
+    const egressClient = new EgressClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
+    const egresses = await egressClient.listEgress();
+
+    const formattedEgresses = egresses.map(egress => ({
+      egressId: egress.egressId,
+      roomName: egress.roomName,
+      status: egress.status,
+      startedAt: egress.startedAt ? new Date(Number(egress.startedAt) * 1000).toISOString() : null,
+      endedAt: egress.endedAt ? new Date(Number(egress.endedAt) * 1000).toISOString() : null,
+      error: egress.error,
+    }));
+
+    res.json({ egresses: formattedEgresses });
+  } catch (error) {
+    logger.error('Error fetching egress sessions:', error);
+    res.status(500).json({ error: 'Failed to fetch egress sessions' });
+  }
+});
+
+router.post('/admin/egress/:egressId/stop', verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
+  const user = req.user;
+  if (!user || user.email !== 'dev.ahmedhany@gmail.com' || !user.email_verified) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const { egressId } = req.params;
+
+  try {
+    const egressClient = new EgressClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
+    const result = await egressClient.stopEgress(egressId);
+
+    res.json({
+      success: true,
+      message: `Egress session ${egressId} stopped successfully`,
+      result: {
+        egressId: result.egressId,
+        status: result.status,
+      }
+    });
+  } catch (error) {
+    logger.error(`Error stopping egress ${egressId}:`, error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: `Failed to stop egress session: ${errorMessage}` });
+  }
+});
+
 export default router;
