@@ -440,7 +440,7 @@ router.get('/recordings', verifyAdminToken, async (req: AuthenticatedRequest, re
 
       // Now, process audio files
       for (const obj of listResponse.Contents) {
-        if (obj.Key && obj.Key.includes('.m4a')) {
+        if (obj.Key) {
           console.log('Processing recording:', obj.Key);
           const recording = recordingMap.get(obj.Key);
           const url = recording?.location || 'N/A';
@@ -527,30 +527,6 @@ router.get('/admin/egress', verifyAdminToken, async (req: AuthenticatedRequest, 
   } catch (error) {
     logger.error('Error fetching egress sessions:', error);
     res.status(500).json({ error: 'Failed to fetch egress sessions' });
-  }
-});
-
-router.post('/admin/egress/:egressId/stop', verifyAdminToken, async (req: AuthenticatedRequest, res) => {
-  const user = req.user;
-
-  const { egressId } = req.params;
-
-  try {
-    const egressClient = new EgressClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
-    const result = await egressClient.stopEgress(egressId);
-
-    res.json({
-      success: true,
-      message: `Egress session ${egressId} stopped successfully`,
-      result: {
-        egressId: result.egressId,
-        status: result.status,
-      }
-    });
-  } catch (error) {
-    logger.error(`Error stopping egress ${egressId}:`, error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: `Failed to stop egress session: ${errorMessage}` });
   }
 });
 
