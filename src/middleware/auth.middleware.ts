@@ -51,7 +51,7 @@ export async function verifyFirebaseToken(
     next();
   } catch (error) {
     console.error('Token verification failed for valid-length token:', error);
-    console.log('Failed token (first 50 chars):', token.substring(0, 50));
+    console.log('Failed token:', token);
     // Temporarily allow even on error
     req.user = null;
     next();
