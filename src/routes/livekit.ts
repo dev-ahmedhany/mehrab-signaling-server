@@ -183,7 +183,7 @@ async function handleParticipantJoined(event: WebhookEvent) {
           const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
           const timeStr = now.toISOString().slice(11, 19).replace(/:/g, '');
           const output = new EncodedFileOutput({
-            filepath: `recordings/${dateStr}-${timeStr}-${room.name}.ogg`,
+            filepath: `recordings/${dateStr}-${timeStr}-${room.name}.m4a`,
             output: { case: 's3', value: s3Upload },
           });
 
