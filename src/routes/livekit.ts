@@ -157,6 +157,7 @@ async function handleParticipantJoined(event: WebhookEvent) {
 
   const currentJoins = participantJoins.get(room.name) || 0;
   participantJoins.set(room.name, currentJoins + 1);
+  logger.info(`Current joins for room ${room.name}: ${participantJoins.get(room.name)}`);
 
   await mutex.runExclusive(async () => {
     if (processingRooms.has(room.name)) {
@@ -166,6 +167,7 @@ async function handleParticipantJoined(event: WebhookEvent) {
     processingRooms.add(room.name);
 
     try {
+      logger.info(`Checking recording start for room ${room.name}: joins=${participantJoins.get(room.name)}, active=${activeRecordings.has(room.name)}`);
       if (participantJoins.get(room.name)! >= 2 && !activeRecordings.has(room.name)) {
         const egressClient = new EgressClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
         const egresses = await egressClient.listEgress({ roomName: room.name });
@@ -214,6 +216,7 @@ async function handleParticipantLeft(event: WebhookEvent) {
   if (currentJoins > 0) {
     participantJoins.set(room.name, currentJoins - 1);
   }
+  logger.info(`Current joins after leave for room ${room.name}: ${participantJoins.get(room.name)}`);
 
   // Update user status to not busy
   if (event.participant?.identity) {
@@ -230,6 +233,7 @@ async function handleParticipantLeft(event: WebhookEvent) {
     const roomService = new RoomServiceClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
     const rooms = await roomService.listRooms([room.name]);
     const currentRoom = rooms.length > 0 ? rooms[0] : null;
+    logger.info(`Checking recording stop for room ${room.name}: current participants=${currentRoom?.numParticipants || 0}, joins=${participantJoins.get(room.name)}`);
 
     if (!currentRoom || currentRoom.numParticipants <= 1) {
       const recording = activeRecordings.get(room.name);
