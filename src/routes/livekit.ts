@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import express from 'express';
 import { AccessToken, EncodedFileOutput, S3Upload, WebhookReceiver, RoomServiceClient, EgressClient, AudioCodec, EncodingOptions } from 'livekit-server-sdk';
-import { verifyFirebaseToken, AuthenticatedRequest } from '../middleware/auth.middleware';
+import { verifyFirebaseToken, verifyAdminToken, AuthenticatedRequest } from '../middleware/auth.middleware';
 import { config } from '../config';
 import admin from 'firebase-admin';
 import { Mutex } from 'async-mutex';
@@ -387,20 +387,14 @@ router.post('/webhook', webhookLimiter, express.raw({ type: 'application/webhook
   }
 });
 
-router.get('/recordings', verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
+router.get('/recordings', verifyAdminToken, async (req: AuthenticatedRequest, res) => {
   const user = req.user;
-  if (!user) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
   
 
   try {
     console.log('Fetching recordings for user:', user.email);
     console.log('Bucket:', config.livekit.r2.bucket);
     console.log('Endpoint:', `https://${config.livekit.r2.endpoint}`);
-    if (user.email !== 'dev.ahmedhany@gmail.com' || !user.email_verified) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
 
     // List objects in recordings/
     console.log('Listing objects with prefix: recordings/');
@@ -488,11 +482,8 @@ router.get('/recordings', verifyFirebaseToken, async (req: AuthenticatedRequest,
 });
 
 // Admin endpoints for managing egress sessions
-router.get('/admin/egress', verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
+router.get('/admin/egress', verifyAdminToken, async (req: AuthenticatedRequest, res) => {
   const user = req.user;
-  if (!user || user.email !== 'dev.ahmedhany@gmail.com' || !user.email_verified) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
 
   try {
     const egressClient = new EgressClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
@@ -514,11 +505,8 @@ router.get('/admin/egress', verifyFirebaseToken, async (req: AuthenticatedReques
   }
 });
 
-router.post('/admin/egress/:egressId/stop', verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
+router.post('/admin/egress/:egressId/stop', verifyAdminToken, async (req: AuthenticatedRequest, res) => {
   const user = req.user;
-  if (!user || user.email !== 'dev.ahmedhany@gmail.com' || !user.email_verified) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
 
   const { egressId } = req.params;
 
