@@ -7,6 +7,8 @@ import admin from 'firebase-admin';
 import { Mutex } from 'async-mutex';
 import winston from 'winston';
 import rateLimit from 'express-rate-limit';
+import { S3Client, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 // Define types for webhook events to replace 'any'
 interface Room {
@@ -73,6 +75,16 @@ if (!config.livekit.r2.accessKey || !config.livekit.r2.secretKey || !config.live
 
 // Initialize WebhookReceiver for signature validation
 const webhookReceiver = new WebhookReceiver(config.livekit.apiKey, config.livekit.apiSecret);
+
+// Initialize S3 client for R2
+const s3Client = new S3Client({
+  region: 'auto',
+  endpoint: config.livekit.r2.endpoint,
+  credentials: {
+    accessKeyId: config.livekit.r2.accessKey,
+    secretAccessKey: config.livekit.r2.secretKey,
+  },
+});
 
 // Store active recordings to manage them
 const activeRecordings = new Map<string, { egressId: string, startTime: Date }>();
@@ -361,6 +373,68 @@ router.post('/webhook', webhookLimiter, express.raw({ type: 'application/webhook
       return res.status(401).send('Unauthorized');
     }
     res.status(500).send('Internal Server Error');
+  }
+});
+
+router.get('/recordings', verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
+  const user = req.user;
+  if (!user) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+
+  try {
+    if (user.email !== 'dev.ahmedhany@gmail.com' || !user.email_verified) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    // List objects in recordings/
+    const listCommand = new ListObjectsV2Command({
+      Bucket: config.livekit.r2.bucket,
+      Prefix: 'recordings/',
+    });
+
+    const listResponse = await s3Client.send(listCommand);
+    const recordings = [];
+
+    if (listResponse.Contents) {
+      for (const obj of listResponse.Contents) {
+        if (obj.Key && (obj.Key.endsWith('.acc') || obj.Key.endsWith('.m4a'))) {
+          const getCommand = new GetObjectCommand({
+            Bucket: config.livekit.r2.bucket,
+            Key: obj.Key,
+          });
+          const signedUrl = await getSignedUrl(s3Client, getCommand, { expiresIn: 3600 }); // 1 hour
+
+          // Parse key to get date and room
+          const parts = obj.Key.split('/');
+          if (parts.length >= 3) {
+            const revDateStr = parts[1];
+            const filename = parts[2];
+            const dateNum = 99999999 - parseInt(revDateStr);
+            const date = new Date(dateNum / 10000, (dateNum % 10000) / 100 - 1, dateNum % 100);
+            const roomName = filename.split('-').slice(1).join('-').replace('.acc', '').replace('.m4a', '');
+
+            recordings.push({
+              key: obj.Key,
+              url: signedUrl,
+              lastModified: obj.LastModified,
+              size: obj.Size,
+              date: date.toISOString(),
+              roomName,
+            });
+          }
+        }
+      }
+    }
+
+    // Sort by date desc
+    recordings.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    res.json({ recordings });
+  } catch (error) {
+    logger.error('Error fetching recordings:', error);
+    res.status(500).json({ error: 'Failed to fetch recordings' });
   }
 });
 
