@@ -452,7 +452,7 @@ router.get('/recordings', verifyAdminToken, async (req: AuthenticatedRequest, re
             const filename = parts[2];
             const dateNum = 99999999 - parseInt(revDateStr);
             const date = new Date(dateNum / 10000, (dateNum % 10000) / 100 - 1, dateNum % 100);
-            const roomName = filename.split('-').slice(1).join('-').replace('.acc', '').replace('.m4a', '').replace('.ogg', '');
+            const roomName = filename.split('-').slice(1).join('-').replace('.acc', '').replace('.m4a', '').replace('.ogg', '').replace('.mp4', '');
 
             recordings.push({
               key: obj.Key,
