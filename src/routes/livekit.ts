@@ -180,7 +180,7 @@ async function handleParticipantJoined(event: WebhookEvent) {
             endpoint: config.livekit.r2.endpoint,
           });
           const output = new EncodedFileOutput({
-            filepath: `recordings/${room.name}-${Date.now()}.mp4`,
+            filepath: `recordings/${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${room.name}}.mp4`,
             output: { case: 's3', value: s3Upload },
           });
 
@@ -219,7 +219,7 @@ async function handleParticipantLeft(event: WebhookEvent) {
   logger.info(`Current joins after leave for room ${room.name}: ${participantJoins.get(room.name)}`);
 
   // Update user status to not busy
-  if (event.participant?.identity) {
+  if (event.participant?.identity && !event.participant.identity.startsWith('EG_')) { //recording bot
     try {
       const userDocRef = admin.firestore().collection('users').doc(event.participant.identity);
       await userDocRef.update({ isBusy: false });
