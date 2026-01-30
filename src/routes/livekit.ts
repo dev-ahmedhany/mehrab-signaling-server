@@ -182,8 +182,13 @@ async function handleParticipantJoined(event: WebhookEvent) {
           const now = new Date();
           const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
           const timeStr = now.toISOString().slice(11, 19).replace(/:/g, '');
+          // Reverse date and time for descending sort (latest first)
+          const dateNum = parseInt(dateStr);
+          const timeNum = parseInt(timeStr);
+          const revDateStr = (99999999 - dateNum).toString().padStart(8, '0');
+          const revTimeStr = (999999 - timeNum).toString().padStart(6, '0');
           const output = new EncodedFileOutput({
-            filepath: `recordings/${dateStr}-${timeStr}-${room.name}.m4a`,
+            filepath: `recordings/${revDateStr}/${revTimeStr}-${room.name}.m4a`,
             output: { case: 's3', value: s3Upload },
           });
 
