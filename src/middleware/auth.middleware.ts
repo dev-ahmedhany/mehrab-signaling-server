@@ -36,9 +36,9 @@ export async function verifyFirebaseToken(
   const token = authHeader.split('Bearer ')[1];
 
   console.log('Token extracted, length:', token ? token.length : 0);
-  if (!token) {
-    console.log('Token is empty, allowing as guest');
-    // Invalid token format
+  if (!token || token.length < 100) {
+    console.log('Token is empty or too short, allowing as guest');
+    // Invalid token format or too short
     req.user = null;
     next();
     return;
@@ -50,7 +50,7 @@ export async function verifyFirebaseToken(
     req.user = decodedToken;
     next();
   } catch (error) {
-    console.error('Token verification failed:', error);
+    console.error('Token verification failed for valid-length token:', error);
     console.log('Failed token (first 50 chars):', token.substring(0, 50));
     // Temporarily allow even on error
     req.user = null;
