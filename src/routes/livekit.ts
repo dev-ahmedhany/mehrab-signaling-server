@@ -78,7 +78,7 @@ const webhookReceiver = new WebhookReceiver(config.livekit.apiKey, config.liveki
 // Initialize S3 client for R2
 const s3Client = new S3Client({
   region: 'auto',
-  endpoint: `https://${config.livekit.r2.endpoint}`,
+  endpoint: `${config.livekit.r2.endpoint}`,
   forcePathStyle: true,
   credentials: {
     accessKeyId: config.livekit.r2.accessKey,
@@ -489,14 +489,39 @@ router.get('/admin/egress', verifyAdminToken, async (req: AuthenticatedRequest, 
     const egressClient = new EgressClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
     const egresses = await egressClient.listEgress();
 
-    const formattedEgresses = egresses.map(egress => ({
-      egressId: egress.egressId,
-      roomName: egress.roomName,
-      status: egress.status,
-      startedAt: egress.startedAt ? new Date(Number(egress.startedAt) * 1000).toISOString() : null,
-      endedAt: egress.endedAt ? new Date(Number(egress.endedAt) * 1000).toISOString() : null,
-      error: egress.error,
-    }));
+    const formattedEgresses = egresses.map(egress => {
+      // Safely convert timestamps - LiveKit returns timestamps in seconds as bigint
+      const startedAt = egress.startedAt ? (() => {
+        try {
+          const timestamp = typeof egress.startedAt === 'bigint' 
+            ? Number(egress.startedAt) * 1000 
+            : Number(egress.startedAt);
+          return isNaN(timestamp) || timestamp <= 0 ? null : new Date(timestamp).toISOString();
+        } catch {
+          return null;
+        }
+      })() : null;
+
+      const endedAt = egress.endedAt ? (() => {
+        try {
+          const timestamp = typeof egress.endedAt === 'bigint' 
+            ? Number(egress.endedAt) * 1000 
+            : Number(egress.endedAt);
+          return isNaN(timestamp) || timestamp <= 0 ? null : new Date(timestamp).toISOString();
+        } catch {
+          return null;
+        }
+      })() : null;
+
+      return {
+        egressId: egress.egressId,
+        roomName: egress.roomName,
+        status: egress.status,
+        startedAt,
+        endedAt,
+        error: egress.error,
+      };
+    });
 
     res.json({ egresses: formattedEgresses });
   } catch (error) {
