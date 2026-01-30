@@ -88,7 +88,7 @@ router.post('/token', tokenLimiter, verifyFirebaseToken, async (req: Authenticat
   const clientType = userAgent.includes('Dart') ? 'Flutter App' : 
                      userAgent.includes('Mozilla') ? 'Web Browser' : 'Unknown';
 
-  logger.info(`Token request from ${clientType} (User-Agent: ${userAgent.substring(0, 100)}), user: ${user?.uid || 'unauthenticated'}, room: ${roomName}`);
+  // logger.info(`Token request from ${clientType} (User-Agent: ${userAgent.substring(0, 100)}), user: ${user?.uid || 'unauthenticated'}, room: ${roomName}`);
 
   // Validate input
   if (!roomName || typeof roomName !== 'string' || roomName.length > 100 || !/^[a-zA-Z0-9_-]+$/.test(roomName)) {
@@ -114,13 +114,13 @@ router.post('/token', tokenLimiter, verifyFirebaseToken, async (req: Authenticat
 
   try {
     const token = await at.toJwt();
-    logger.info(`Generated token for user ${user.uid} in room ${roomName}`);
+    // logger.info(`Generated token for user ${user.uid} in room ${roomName}`);
 
     // Create room if it doesn't exist
     try {
       const roomService = new RoomServiceClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
       await roomService.createRoom({ name: roomName, emptyTimeout: 30 });
-      logger.info(`Created room ${roomName} with 30s empty timeout`);
+      // logger.info(`Created room ${roomName} with 30s empty timeout`);
     } catch (error) {
       logger.error(`Failed to create room ${roomName}:`, error);
       // Continue without failing the request
@@ -130,7 +130,7 @@ router.post('/token', tokenLimiter, verifyFirebaseToken, async (req: Authenticat
     try {
       const userDocRef = admin.firestore().collection('users').doc(user.uid);
       await userDocRef.update({ isBusy: true });
-      logger.info(`Updated user ${user.uid} status to busy`);
+      // logger.info(`Updated user ${user.uid} status to busy`);
     } catch (error) {
       logger.error(`Failed to update user status for ${user.uid}:`, error);
       // Continue without failing the request
@@ -147,27 +147,27 @@ router.post('/token', tokenLimiter, verifyFirebaseToken, async (req: Authenticat
 async function handleRoomStarted(event: WebhookEvent) {
   if (!event.room) return;
   const room = event.room;
-  logger.info(`Room ${room.name} started`);
+  // logger.info(`Room ${room.name} started`);
 }
 
 async function handleParticipantJoined(event: WebhookEvent) {
   if (!event.room) return;
   const room = event.room;
-  logger.info(`Participant ${event.participant?.identity} joined room ${room.name}`);
+  // logger.info(`Participant ${event.participant?.identity} joined room ${room.name}`);
 
   const currentJoins = participantJoins.get(room.name) || 0;
   participantJoins.set(room.name, currentJoins + 1);
-  logger.info(`Current joins for room ${room.name}: ${participantJoins.get(room.name)}`);
+  // logger.info(`Current joins for room ${room.name}: ${participantJoins.get(room.name)}`);
 
   await mutex.runExclusive(async () => {
     if (processingRooms.has(room.name)) {
-      logger.info(`Recording already being started for room ${room.name}`);
+      // logger.info(`Recording already being started for room ${room.name}`);
       return;
     }
     processingRooms.add(room.name);
 
     try {
-      logger.info(`Checking recording start for room ${room.name}: joins=${participantJoins.get(room.name)}, active=${activeRecordings.has(room.name)}`);
+      // logger.info(`Checking recording start for room ${room.name}: joins=${participantJoins.get(room.name)}, active=${activeRecordings.has(room.name)}`);
       if (participantJoins.get(room.name)! >= 2 && !activeRecordings.has(room.name)) {
         const egressClient = new EgressClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
         const egresses = await egressClient.listEgress({ roomName: room.name });
@@ -191,12 +191,12 @@ async function handleParticipantJoined(event: WebhookEvent) {
             startTime: new Date(),
           });
 
-          logger.info(`Started recording ${egressResponse.egressId} for room ${room.name} via webhook (joins: ${participantJoins.get(room.name)})`);
+          // logger.info(`Started recording ${egressResponse.egressId} for room ${room.name} via webhook (joins: ${participantJoins.get(room.name)})`);
         } else {
-          logger.info(`Egress already exists for room ${room.name}`);
+          // logger.info(`Egress already exists for room ${room.name}`);
         }
       } else {
-        logger.info(`Not starting recording for room ${room.name}: joins=${participantJoins.get(room.name)}, recording active=${activeRecordings.has(room.name)}`);
+        // logger.info(`Not starting recording for room ${room.name}: joins=${participantJoins.get(room.name)}, recording active=${activeRecordings.has(room.name)}`);
       }
     } catch (error) {
       logger.error(`Error starting recording for room ${room.name}:`, error);
@@ -209,21 +209,21 @@ async function handleParticipantJoined(event: WebhookEvent) {
 async function handleParticipantLeft(event: WebhookEvent) {
   if (!event.room) return;
   const room = event.room;
-  logger.info(`Participant ${event.participant?.identity} left room ${room.name}`);
+  // logger.info(`Participant ${event.participant?.identity} left room ${room.name}`);
 
   // Decrement join count
   const currentJoins = participantJoins.get(room.name) || 0;
   if (currentJoins > 0) {
     participantJoins.set(room.name, currentJoins - 1);
   }
-  logger.info(`Current joins after leave for room ${room.name}: ${participantJoins.get(room.name)}`);
+  // logger.info(`Current joins after leave for room ${room.name}: ${participantJoins.get(room.name)}`);
 
   // Update user status to not busy
   if (event.participant?.identity && !event.participant.identity.startsWith('EG_')) { //recording bot
     try {
       const userDocRef = admin.firestore().collection('users').doc(event.participant.identity);
       await userDocRef.update({ isBusy: false });
-      logger.info(`Updated user ${event.participant.identity} status to not busy`);
+      // logger.info(`Updated user ${event.participant.identity} status to not busy`);
     } catch (error) {
       logger.error(`Failed to update user status for ${event.participant.identity}:`, error);
     }
@@ -233,7 +233,7 @@ async function handleParticipantLeft(event: WebhookEvent) {
     const roomService = new RoomServiceClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
     const rooms = await roomService.listRooms([room.name]);
     const currentRoom = rooms.length > 0 ? rooms[0] : null;
-    logger.info(`Checking recording stop for room ${room.name}: current participants=${currentRoom?.numParticipants || 0}, joins=${participantJoins.get(room.name)}`);
+    // logger.info(`Checking recording stop for room ${room.name}: current participants=${currentRoom?.numParticipants || 0}, joins=${participantJoins.get(room.name)}`);
 
     if (!currentRoom || currentRoom.numParticipants <= 1) {
       const recording = activeRecordings.get(room.name);
@@ -241,16 +241,16 @@ async function handleParticipantLeft(event: WebhookEvent) {
         try {
           const egressClient = new EgressClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
           await egressClient.stopEgress(recording.egressId);
-          logger.info(`Stopped recording ${recording.egressId} for room ${room.name} via webhook (participants: ${currentRoom?.numParticipants || 0})`);
+          // logger.info(`Stopped recording ${recording.egressId} for room ${room.name} via webhook (participants: ${currentRoom?.numParticipants || 0})`);
           activeRecordings.delete(room.name);
         } catch (error) {
           logger.error(`Error stopping recording for room ${room.name}:`, error);
         }
       } else {
-        logger.info(`No active recording to stop for room ${room.name}`);
+        // logger.info(`No active recording to stop for room ${room.name}`);
       }
     } else {
-      logger.info(`Not stopping recording for room ${room.name}: participants=${currentRoom?.numParticipants || 0}`);
+      // logger.info(`Not stopping recording for room ${room.name}: participants=${currentRoom?.numParticipants || 0}`);
     }
   });
 }
@@ -258,7 +258,7 @@ async function handleParticipantLeft(event: WebhookEvent) {
 async function handleRoomFinished(event: WebhookEvent) {
   if (!event.room) return;
   const room = event.room;
-  logger.info(`Room ${room.name} finished`);
+  // logger.info(`Room ${room.name} finished`);
 
   // Clean up
   participantJoins.delete(room.name);
@@ -269,20 +269,20 @@ async function handleRoomFinished(event: WebhookEvent) {
       try {
         const egressClient = new EgressClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
         await egressClient.stopEgress(recording.egressId);
-        logger.info(`Stopped recording ${recording.egressId} for finished room ${room.name}`);
+        // logger.info(`Stopped recording ${recording.egressId} for finished room ${room.name}`);
         activeRecordings.delete(room.name);
       } catch (error) {
         logger.error(`Error stopping recording for finished room ${room.name}:`, error);
       }
     } else {
-      logger.info(`No active recording for finished room ${room.name}`);
+      // logger.info(`No active recording for finished room ${room.name}`);
     }
   });
 }
 
 async function handleEgressEnded(event: WebhookEvent) {
   if (!event.egressInfo) return;
-  logger.info(`Egress ${event.egressInfo.egressId} ended for room ${event.egressInfo.roomName}`);
+  // logger.info(`Egress ${event.egressInfo.egressId} ended for room ${event.egressInfo.roomName}`);
 
   if (event.egressInfo.roomName && activeRecordings.has(event.egressInfo.roomName)) {
     activeRecordings.delete(event.egressInfo.roomName);
@@ -305,7 +305,7 @@ router.post('/webhook', webhookLimiter, express.raw({ type: 'application/webhook
 
     // Validate the webhook signature
     const event: WebhookEvent = await webhookReceiver.receive(req.body.toString(), authHeader);
-    logger.info(`Received webhook event: ${event.event} for room: ${event.room?.name || 'unknown'}`);
+    // logger.info(`Received webhook event: ${event.event} for room: ${event.room?.name || 'unknown'}`);
 
     switch (event.event) {
     case 'room_started':
@@ -326,6 +326,19 @@ router.post('/webhook', webhookLimiter, express.raw({ type: 'application/webhook
 
     case 'egress_ended':
       await handleEgressEnded(event);
+      break;
+
+    case 'egress_started':
+      // logger.info(`Egress started for room ${event.room?.name || 'unknown'}`);
+      break;
+    case 'egress_updated':
+      // logger.info(`Egress updated for room ${event.room?.name || 'unknown'}`);
+      break;
+    case 'track_published':
+      // logger.info(`Track published in room ${event.room?.name || 'unknown'}`);
+      break;
+    case 'track_unpublished':
+      // logger.info(`Track unpublished in room ${event.room?.name || 'unknown'}`);
       break;
 
     default:
