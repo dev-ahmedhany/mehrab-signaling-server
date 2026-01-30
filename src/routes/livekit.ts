@@ -422,11 +422,8 @@ router.get('/recordings', verifyFirebaseToken, async (req: AuthenticatedRequest,
               const data = JSON.parse(body);
               if (data.files && data.files.length > 0) {
                 const filename = data.files[0].filename;
-                let location = data.files[0].location;
-                // Replace with custom domain if present
-                if (location && location.includes('r2.cloudflarestorage.com')) {
-                  location = location.replace(/https:\/\/[^\/]+\.r2\.cloudflarestorage\.com/, 'https://r2.mehrab-alquran.com');
-                }
+                // Use custom domain URL directly from filename
+                const location = `https://r2.mehrab-alquran.com/${filename}`;
                 recordingMap.set(filename, { location, data });
               }
             }
