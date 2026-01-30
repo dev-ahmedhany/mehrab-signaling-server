@@ -11,7 +11,7 @@ import rateLimit from 'express-rate-limit';
 // Define types for webhook events to replace 'any'
 interface Room {
   name: string;
-  numParticipants: number;
+  num_participants: number;
 }
 
 interface Participant {
@@ -162,7 +162,7 @@ async function handleParticipantJoined(event: WebhookEvent) {
     processingRooms.add(room.name);
 
     try {
-      if (room.numParticipants >= 2 && !activeRecordings.has(room.name)) {
+      if (room.num_participants >= 2 && !activeRecordings.has(room.name)) {
         const egressClient = new EgressClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
         const egresses = await egressClient.listEgress({ roomName: room.name });
 
@@ -185,12 +185,12 @@ async function handleParticipantJoined(event: WebhookEvent) {
             startTime: new Date(),
           });
 
-          logger.info(`Started recording ${egressResponse.egressId} for room ${room.name} via webhook (participants: ${room.numParticipants})`);
+          logger.info(`Started recording ${egressResponse.egressId} for room ${room.name} via webhook (participants: ${room.num_participants})`);
         } else {
           logger.info(`Egress already exists for room ${room.name}`);
         }
       } else {
-        logger.info(`Not starting recording for room ${room.name}: participants=${room.numParticipants}, recording active=${activeRecordings.has(room.name)}`);
+        logger.info(`Not starting recording for room ${room.name}: participants=${room.num_participants}, recording active=${activeRecordings.has(room.name)}`);
       }
     } catch (error) {
       logger.error(`Error starting recording for room ${room.name}:`, error);
@@ -289,6 +289,7 @@ router.post('/webhook', webhookLimiter, express.raw({ type: 'application/webhook
     // Validate the webhook signature
     const event: WebhookEvent = await webhookReceiver.receive(req.body.toString(), authHeader);
     logger.info(`Received webhook event: ${event.event} for room: ${event.room?.name || 'unknown'}`);
+    logger.info(`Full event: ${JSON.stringify(event)}`);
 
     switch (event.event) {
     case 'room_started':
