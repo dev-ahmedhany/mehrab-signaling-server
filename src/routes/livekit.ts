@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import express from 'express';
-import { AccessToken, EncodedFileOutput, S3Upload, WebhookReceiver, RoomServiceClient, EgressClient } from 'livekit-server-sdk';
+import { AccessToken, EncodedFileOutput, S3Upload, WebhookReceiver, RoomServiceClient, EgressClient, AudioCodec, EncodingOptions } from 'livekit-server-sdk';
 import { verifyFirebaseToken, AuthenticatedRequest } from '../middleware/auth.middleware';
 import { config } from '../config';
 import admin from 'firebase-admin';
@@ -200,11 +200,22 @@ async function handleParticipantJoined(event: WebhookEvent) {
           const revDateStr = (99999999 - dateNum).toString().padStart(8, '0');
           const revTimeStr = (999999 - timeNum).toString().padStart(6, '0');
           const output = new EncodedFileOutput({
-            filepath: `recordings/${revDateStr}/${revTimeStr}-${room.name}.acc`,
+            filepath: `recordings/${revDateStr}/${revTimeStr}-${room.name}.m4a`,
             output: { case: 's3', value: s3Upload },
           });
 
-          const egressResponse = await egressClient.startRoomCompositeEgress(room.name, output, { audioOnly: true });
+          // Create encoding options for high-quality AAC audio (optimized for human voice)
+          const encodingOptions = new EncodingOptions({
+            audioCodec: AudioCodec.AAC,
+            audioBitrate: 256,        // High quality bitrate for voice
+            audioFrequency: 44100,    // CD quality sampling rate
+            audioQuality: 5,          // Highest quality setting available
+          });
+
+          const egressResponse = await egressClient.startRoomCompositeEgress(room.name, output, { 
+            audioOnly: true,
+            encodingOptions: encodingOptions,
+          });
 
           activeRecordings.set(room.name, {
             egressId: egressResponse.egressId,
