@@ -3,6 +3,7 @@
     {
       "source": "functions",
       "codebase": "default",
+      "region": "europe-west1",
       "disallowLegacyRuntimeConfig": true,
       "ignore": [
         "node_modules",
