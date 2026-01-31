@@ -138,16 +138,6 @@ router.post('/token', tokenLimiter, verifyFirebaseToken, async (req: Authenticat
       // Continue without failing the request
     }
 
-    // Update user status
-    try {
-      const userDocRef = admin.firestore().collection('users').doc(user.uid);
-      await userDocRef.update({ isBusy: true });
-      // logger.info(`Updated user ${user.uid} status to busy`);
-    } catch (error) {
-      logger.error(`Failed to update user status for ${user.uid}:`, error);
-      // Continue without failing the request
-    }
-
     res.json({ token, host: config.livekit.host });
   } catch (error) {
     logger.error('Error generating token:', error);

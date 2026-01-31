@@ -8,7 +8,7 @@
  */
 
 import {setGlobalOptions} from "firebase-functions";
-import {onDocumentUpdated} from "firebase-functions/v2/firestore";
+import {onDocumentUpdated, onDocumentCreated} from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 
@@ -69,5 +69,20 @@ export const enforceUserBusyState = onDocumentUpdated("users/{userId}", async (e
         lastSystemUpdate: admin.firestore.FieldValue.serverTimestamp() // Optional: for debugging
       });
     }
+  }
+});
+
+// Set teacher as busy when a new call document is created
+export const setTeacherBusyOnCallCreated = onDocumentCreated("calls/{callId}", async (event) => {
+  const callData = event.data?.data();
+  const teacherUid = callData?.teacherUid;
+
+  if (teacherUid) {
+    logger.info(`New call created for teacher ${teacherUid}. Setting teacher as busy.`);
+
+    await admin.firestore().collection("users").doc(teacherUid).update({
+      isBusy: true,
+      lastSystemUpdate: admin.firestore.FieldValue.serverTimestamp()
+    });
   }
 });
