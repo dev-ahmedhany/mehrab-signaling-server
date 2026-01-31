@@ -274,6 +274,17 @@ async function handleParticipantLeft(event: WebhookEvent) {
           await egressClient.stopEgress(recording.egressId);
           // logger.info(`Stopped recording ${recording.egressId} for room ${room.name} via webhook (participants: ${currentRoom?.numParticipants || 0})`);
           activeRecordings.delete(room.name);
+
+          // Update call status to ended
+          try {
+            await admin.firestore().collection('calls').doc(room.name).update({
+              status: 'ended',
+              endedTime: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            // logger.info(`Updated call ${room.name} status to ended`);
+          } catch (error) {
+            logger.error(`Failed to update call status for ${room.name}:`, error);
+          }
         } catch (error) {
           logger.error(`Error stopping recording for room ${room.name}:`, error);
         }
@@ -302,6 +313,17 @@ async function handleRoomFinished(event: WebhookEvent) {
         await egressClient.stopEgress(recording.egressId);
         // logger.info(`Stopped recording ${recording.egressId} for finished room ${room.name}`);
         activeRecordings.delete(room.name);
+
+        // Update call status to ended
+        try {
+          await admin.firestore().collection('calls').doc(room.name).update({
+            status: 'ended',
+            endedTime: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          // logger.info(`Updated call ${room.name} status to ended`);
+        } catch (error) {
+          logger.error(`Failed to update call status for ${room.name}:`, error);
+        }
       } catch (error) {
         logger.error(`Error stopping recording for finished room ${room.name}:`, error);
       }
