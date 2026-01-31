@@ -7,7 +7,7 @@ export interface AuthenticatedRequest extends Request {
 }
 
 // Admin email whitelist
-const ADMIN_EMAILS = ['dev.ahmedhany@gmail.com'];
+const ADMIN_EMAILS = ['dev.ahmedhany@gmail.com','husnuabuomar47@gmail.com'];
 
 export function isAdminEmail(email: string | undefined): boolean {
   return email ? ADMIN_EMAILS.includes(email.toLowerCase()) : false;
