@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import express from 'express';
-import { AccessToken, EncodedFileOutput, S3Upload, WebhookReceiver, RoomServiceClient, EgressClient, AudioCodec, EncodingOptions } from 'livekit-server-sdk';
+import { AccessToken, EncodedFileOutput, S3Upload, WebhookReceiver, RoomServiceClient, EgressClient, AudioCodec, EncodingOptions, EgressStatus } from 'livekit-server-sdk';
 import { verifyFirebaseToken, verifyAdminToken, AuthenticatedRequest } from '../middleware/auth.middleware';
 import { config } from '../config';
 import admin from 'firebase-admin';
@@ -489,7 +489,9 @@ router.get('/admin/egress', verifyAdminToken, async (req: AuthenticatedRequest, 
     const egressClient = new EgressClient(config.livekit.host, config.livekit.apiKey, config.livekit.apiSecret);
     const egresses = await egressClient.listEgress();
 
-    const formattedEgresses = egresses.map(egress => {
+    const filteredEgresses = egresses.filter(egress => egress.status !== EgressStatus.EGRESS_COMPLETE);
+
+    const formattedEgresses = filteredEgresses.map(egress => {
       // Safely convert timestamps - LiveKit returns timestamps in seconds as bigint
       const startedAt = egress.startedAt ? (() => {
         try {
